@@ -17,6 +17,12 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M5 — resilience | **Done in `Core`**, unverified in-game |
 | M6 — packaging | Manifest, README and changelog written; no icon yet |
 
+The mod ships pointed at `wss://valheimrelay.bobmitch.com/ws`, so a fresh
+install needs no config edits — §11.2, settled. **That address has not been
+handshaked yet:** the sandbox this was built in blocks the host at its egress
+proxy. Confirming it takes one command (below) and should be done before
+release.
+
 Everything marked "unverified in-game" is written and reviewed but has never
 been loaded into Valheim, because no machine here has the game. That is the
 honest state: the logic is covered by tests and by end-to-end runs against a
@@ -82,6 +88,14 @@ go run ./cmd/stubmap -code K7MQ2XR4      # watch a session as the map would
 ```
 
 Point `RelayUrl` at `ws://localhost:8080/ws` and the plugin will connect to it.
+
+`stubmap` also points at whatever relay you give it, which is the quickest way
+to confirm the hosted one is up — an unknown code should come back as close code
+4004 rather than a connection error:
+
+```sh
+go run ./cmd/stubmap -relay wss://valheimrelay.bobmitch.com/ws -code AAAAAAAA
+```
 
 The integration tests drive the real session over a real socket against that
 relay, and skip themselves when the Go toolchain is absent.

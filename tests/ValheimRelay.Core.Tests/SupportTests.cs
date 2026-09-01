@@ -521,6 +521,56 @@ namespace ValheimRelay.Core.Tests
         }
 
         [Fact]
+        public void AnEmptyConfigLandsOnTheShippedRelay()
+        {
+            // §2: a fresh install must need no edits, so a blank RelayUrl has to
+            // resolve to something that works rather than to nothing.
+            Assert.Equal(RelayUrl.Default, RelayUrl.Normalise(""));
+            Assert.Equal(RelayUrl.Default, RelayUrl.Normalise(null));
+        }
+
+        [Fact]
+        public void TheShippedDefaultIsAlreadyCanonicalAndEncrypted()
+        {
+            // This constant is in every install. A typo in it is a silent
+            // failure for every player at once, and a ws:// slip would put every
+            // player's live position on the wire in the clear (§8).
+            Assert.Equal(RelayUrl.Default, RelayUrl.Normalise(RelayUrl.Default));
+            Assert.StartsWith("wss://", RelayUrl.Default);
+            Assert.EndsWith(RelayUrl.PathSuffix, RelayUrl.Default);
+            Assert.False(RelayUrl.IsInsecure(RelayUrl.Default));
+            Assert.True(Uri.TryCreate(RelayUrl.Default, UriKind.Absolute, out _));
+        }
+
+        [Fact]
+        public void TheDefaultSessionOptionsPointAtTheShippedRelay()
+        {
+            var options = new SessionOptions();
+            options.Normalise();
+            Assert.Equal(RelayUrl.Default, options.RelayUrl);
+        }
+
+        [Fact]
+        public void TheLocalDevelopmentUrlIsNotFlaggedAsInsecure()
+        {
+            // ws:// against the dev fixture is the legitimate plaintext case (§9, M2).
+            Assert.False(RelayUrl.IsInsecure(RelayUrl.LocalDevelopment));
+            Assert.Equal(RelayUrl.LocalDevelopment, RelayUrl.Normalise(RelayUrl.LocalDevelopment));
+        }
+
+        [Fact]
+        public void TheShippedDefaultSurvivesTheTransportsQueryBuilder()
+        {
+            var uri = ClientWebSocketTransport.BuildUri(RelayUrl.Default, "K7MQ2XR4", "tok");
+
+            Assert.Equal("wss", uri.Scheme);
+            Assert.Equal("/ws", uri.AbsolutePath);
+            Assert.Contains("role=mod", uri.Query);
+            Assert.Contains("code=K7MQ2XR4", uri.Query);
+            Assert.Contains("token=tok", uri.Query);
+        }
+
+        [Fact]
         public void ASchemelessHostDefaultsToTheSecureScheme()
         {
             // A player pasting a hostname must not silently end up unencrypted.

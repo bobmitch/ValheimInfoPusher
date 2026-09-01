@@ -870,16 +870,33 @@ Each has a test in `RegressionTests` named for the failure it prevents.
 
 ### 12.12 Still open, and needing a decision
 
-1. **§11.2, the default `RelayUrl`.** Unchanged and blocking a release: shipping
-   a default means hosting an instance and owning its capacity; shipping none
-   means every user edits a config, which breaks §2's product goal outright.
-   Currently defaulted to `ws://localhost:8080/ws` so the mod is runnable, which
-   is not a shippable answer.
+1. ~~**§11.2, the default `RelayUrl`.**~~ **Settled:**
+   `wss://valheimrelay.bobmitch.com/ws`, shipped as the default, which is what
+   keeps §2's "nothing to edit" promise. Two consequences worth being explicit
+   about rather than discovering later:
+   - That instance now carries every installed copy of the mod, bounded by its
+     own `MAX_ROOMS` (1000 by default, §1.5). A player who reaches that limit
+     sees close code 4013, which the mod already backs off from hard — but the
+     limit is now an operational concern for whoever runs the relay, not a
+     theoretical one.
+   - The address is compiled into every install, so changing it later strands
+     old versions. If it is ever likely to move, it wants a stable hostname in
+     front of it rather than the deployment's own.
+
+   It has **not** been verified from a machine that can reach it: the sandbox
+   this was implemented in blocks the host at the egress proxy, so the first
+   real handshake against it will be someone's game or a local `stubmap` run.
+   That is the one thing left to confirm before release, and it is a five-second
+   check: `go run ./cmd/stubmap -relay wss://valheimrelay.bobmitch.com/ws -code
+   <any>` should answer with close code 4004, not a connection error.
 2. **§11.1, the dedicated server.** Needs M0(b). The mod degrades automatically
    either way, so this is a documentation and support-burden question rather than
    a design one now.
-3. **§11.3, the map URL format.** `MapUrl` builds `<base>/#<code>`. The map has
-   to agree, and nothing here can make that happen.
+3. **§11.3, the map URL format.** Still open, and now the only thing standing
+   between the player and a single copyable link. `MapUrl` builds
+   `<base>/#<code>` and defaults to empty, so the panel currently offers the
+   bare code — correct, but one step short of the goal in §2. Needs the map's
+   address and its agreement on the fragment form.
 4. **Reclaim only fires for the elected creator.** A client that created the
    session last time but is not elected this time leaves its stored entry unused
    and the group gets a new code. Correct, but it quietly narrows §5.3's promise

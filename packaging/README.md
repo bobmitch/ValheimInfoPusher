@@ -45,8 +45,9 @@ reclaim token for worlds where it created the session, in
 `BepInEx/config/ValheimRelay.session.json`. Delete that file and you get a fresh
 code next time.
 
-If you are on a `ws://` relay rather than `wss://`, your position is travelling
-unencrypted. The default is `wss://` for that reason.
+Traffic to the default relay is encrypted (`wss://`). If you point `RelayUrl` at
+a `ws://` address, your position travels in the clear — fine for a relay on your
+own machine, not fine over the internet.
 
 ## Configuration
 
@@ -55,7 +56,7 @@ Everything is defaulted; a fresh install needs no edits.
 | Setting | Default | What it does |
 |---|---|---|
 | `Enabled` | `true` | Master switch |
-| `RelayUrl` | see config | Relay address |
+| `RelayUrl` | `wss://valheimrelay.bobmitch.com/ws` | Relay address. Leave it alone unless you run your own |
 | `MapUrl` | empty | Used to build a copyable link instead of a bare code |
 | `AnnounceInChat` | `true` | Print the code in chat when a session starts (local only) |
 | `ShareMyPosition` | `true` | Broadcast your position |

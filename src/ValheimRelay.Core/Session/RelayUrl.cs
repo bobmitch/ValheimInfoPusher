@@ -16,8 +16,25 @@ namespace ValheimRelay.Core.Session
     {
         public const string PathSuffix = "/ws";
 
-        public static string Normalise(string? raw, string fallback = "ws://localhost:8080/ws")
+        /// <summary>
+        /// The relay the mod ships pointed at — §11.2, now settled.
+        /// <para>
+        /// Shipping a default is what keeps §2's promise that a fresh install
+        /// needs no edits. The cost is the one §11.2 named: this instance now
+        /// owns the capacity for every player who installs the mod, bounded by
+        /// the relay's own <c>MAX_ROOMS</c>. A player who runs their own relay
+        /// changes one config line.
+        /// </para>
+        /// </summary>
+        public const string Default = "wss://valheimrelay.bobmitch.com/ws";
+
+        /// <summary>The dev fixture in <c>tools/devrelay</c>, for local work (§9, M2).</summary>
+        public const string LocalDevelopment = "ws://localhost:8080/ws";
+
+        public static string Normalise(string? raw, string? fallback = null)
         {
+            fallback ??= Default;
+
             var url = (raw ?? string.Empty).Trim();
             if (url.Length == 0) return fallback;
 

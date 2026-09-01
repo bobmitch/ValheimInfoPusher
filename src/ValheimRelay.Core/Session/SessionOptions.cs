@@ -20,7 +20,7 @@ namespace ValheimRelay.Core.Session
     /// <summary>Every tunable in one place, all defaulted from PLAN.md §1.5, §5 and §7.</summary>
     public sealed class SessionOptions
     {
-        public string RelayUrl { get; set; } = "wss://localhost:8080/ws";
+        public string RelayUrl { get; set; } = Session.RelayUrl.Default;
 
         /// <summary>§5.1 step 1: how long to listen for a peer's code before acting.</summary>
         public TimeSpan DiscoveryWindow { get; set; } = TimeSpan.FromSeconds(5);

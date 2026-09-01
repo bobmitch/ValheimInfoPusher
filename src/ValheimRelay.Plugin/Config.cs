@@ -20,7 +20,7 @@ namespace ValheimRelay.Plugin
                 "Master switch. Turn this off and the mod does nothing at all.");
 
             RelayUrl = file.Bind("General", "RelayUrl", DefaultRelayUrl,
-                "Relay WebSocket URL. wss:// for the hosted relay, ws:// for a local one.");
+                "Relay WebSocket URL. Leave this alone unless you run your own relay.");
 
             MapUrl = file.Bind("General", "MapUrl", DefaultMapUrl,
                 "Web map base URL, used to build the copyable link. The code is appended as a fragment.");
@@ -46,11 +46,14 @@ namespace ValheimRelay.Plugin
                 "Shows and hides the relay panel.");
         }
 
-        // §11.2 is still open: shipping a default means hosting an instance and
-        // owning its capacity, and shipping none means every user edits a config,
-        // which breaks the "nothing to edit" goal. Left pointing at a local relay
-        // so the mod is runnable today and the decision stays visible.
-        public const string DefaultRelayUrl = "ws://localhost:8080/ws";
+        // §11.2, settled: the mod ships pointed at the hosted relay, which is
+        // what keeps §2's "nothing to edit" promise. The address lives in Core
+        // beside the normalisation rules so it is covered by tests.
+        public const string DefaultRelayUrl = RelayUrl.Default;
+
+        // §11.3 is still open: the map's URL format has to be agreed with the
+        // map, and until it is there is no link to build. Empty means the panel
+        // offers the bare code, which works and tells the player nothing false.
         public const string DefaultMapUrl = "";
 
         public ConfigEntry<bool> Enabled { get; }
