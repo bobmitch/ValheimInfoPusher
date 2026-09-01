@@ -76,6 +76,10 @@ dotnet build src/ValheimRelay.Plugin -c Release
 
 Game DLLs are never committed.
 
+Restore pulls `BepInEx.Core` and `BepInEx.PluginInfoProps` from BepInEx's own
+feed, which `NuGet.config` declares — they are not on nuget.org, and without
+that file the plugin fails to restore with `NU1101`.
+
 ### On Windows
 
 `build.ps1` does the whole thing: checks the toolchain, finds the Steam library
