@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      netstandard2.0 so the same assembly is consumable by the BepInEx plugin
+      (Mono / net4xx) and by the net8.0 test project. Do not add package
+      references here: shipping a second copy of a common library into
+      BepInEx/plugins is the classic way to break someone's modpack.
+    -->
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>ValheimRelay.Core</RootNamespace>
+    <AssemblyName>ValheimRelay.Core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ValheimRelay.Core.Tests" />
+  </ItemGroup>
+
+</Project>

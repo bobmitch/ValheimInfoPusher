@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  core:
+    name: Core + tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      # ValheimRelay.Plugin is deliberately not built here: it references game
+      # assemblies from a local Valheim install, which must never be committed
+      # or redistributed. Core carries the logic, and Core is what CI protects.
+      - name: Restore
+        run: dotnet restore ValheimRelay.sln
+
+      - name: Build
+        run: dotnet build ValheimRelay.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test ValheimRelay.sln --no-build -c Release --verbosity normal
+
+  devrelay:
+    name: Dev relay
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Vet and test
+        working-directory: tools/devrelay
+        run: |
+          go vet ./...
+          go test ./...

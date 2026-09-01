@@ -1,0 +1,30 @@
+<Project>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>NU1701</WarningsNotAsErrors>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <Deterministic>true</Deterministic>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!--
+    Game assemblies are resolved from a local Valheim install and are NEVER
+    committed. Set VALHEIM_INSTALL to the game directory (the one containing
+    valheim_Data/), or override ValheimManaged directly.
+
+      export VALHEIM_INSTALL="$HOME/.steam/steam/steamapps/common/Valheim"
+
+    Only ValheimRelay.Plugin needs these; Core and its tests build anywhere.
+  -->
+  <PropertyGroup>
+    <ValheimInstall Condition="'$(ValheimInstall)' == ''">$(VALHEIM_INSTALL)</ValheimInstall>
+    <ValheimManaged Condition="'$(ValheimManaged)' == '' and '$(ValheimInstall)' != ''">$(ValheimInstall)/valheim_Data/Managed</ValheimManaged>
+    <HaveValheimManaged>false</HaveValheimManaged>
+    <HaveValheimManaged Condition="'$(ValheimManaged)' != '' and Exists('$(ValheimManaged)')">true</HaveValheimManaged>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+*.user
+*.suo
+.vs/
+.idea/
+
+# Never commit game assemblies — see Directory.Build.props
+lib/
+*.dll
+!**/ValheimRelay.Core.dll
+
+# Go
+tools/**/devrelay
+tools/**/stubmap
+
+# Packaging output
+dist/
