@@ -76,6 +76,27 @@ dotnet build src/ValheimRelay.Plugin -c Release
 
 Game DLLs are never committed.
 
+### On Windows
+
+`build.ps1` does the whole thing: checks the toolchain, finds the Steam library
+Valheim actually lives in, builds, and optionally installs the result into
+`BepInEx/plugins`.
+
+```powershell
+winget install --id Microsoft.DotNet.SDK.8 -e   # once, then reopen the shell
+.\build.ps1 -Deploy
+```
+
+- `-Clean` after a game update — the publicized copy of `assembly_valheim` is
+  cached under `obj/` and is otherwise reused against the new version.
+- `-ValheimInstall <path>` if the search misses it.
+- `-PluginsDir <path>` to install into an r2modman profile rather than the
+  Steam folder.
+
+BepInEx still has to be installed in the game itself (Thunderstore:
+`denikson-BepInExPack_Valheim`); the script warns if it is missing rather than
+leaving you with a plugin that silently never loads.
+
 ## Running it locally
 
 The relay this mod talks to is **not in this repository** — see
