@@ -27,14 +27,27 @@ namespace ValheimRelay.Core.Tests
         /// <summary>The <c>ws://…/ws</c> URL the relay is actually listening on.</summary>
         public string Url { get; }
 
+        /// <summary>
+        /// Returns null only when the Go toolchain is genuinely absent, which is
+        /// the one condition worth skipping for.
+        /// <para>
+        /// Everything else propagates and fails the test. Swallowing all
+        /// exceptions here once let the entire fixture go missing from the
+        /// repository — a .gitignore glob had un-tracked it — while CI stayed
+        /// green, because seven integration tests quietly skipped instead of
+        /// reporting that they had nothing to run against. A test that cannot
+        /// run must say so loudly enough to fail a build.
+        /// </para>
+        /// </summary>
         public static DevRelay? TryStart(string extraArgs = "")
         {
             try
             {
                 return Start(extraArgs);
             }
-            catch (Exception)
+            catch (System.ComponentModel.Win32Exception)
             {
+                // No `go` on PATH.
                 return null;
             }
         }
@@ -98,7 +111,9 @@ namespace ValheimRelay.Core.Tests
                 if (Directory.Exists(candidate)) return candidate;
                 dir = dir.Parent;
             }
-            throw new DirectoryNotFoundException("could not locate tools/devrelay");
+            throw new DirectoryNotFoundException(
+                "could not locate tools/devrelay from " + AppContext.BaseDirectory +
+                ". The dev relay fixture is missing from the working tree — check it is tracked in git.");
         }
 
         private static void TryKill(Process process)

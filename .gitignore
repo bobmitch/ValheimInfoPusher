@@ -14,9 +14,13 @@ lib/
 *.dll
 !**/ValheimRelay.Core.dll
 
-# Go
-tools/**/devrelay
-tools/**/stubmap
+# Compiled Go binaries. Anchored to exactly where `go build` drops them:
+# a glob like `tools/**/devrelay` also matches the tools/devrelay *directory*
+# and silently un-tracks the whole fixture.
+/tools/devrelay/devrelay
+/tools/devrelay/stubmap
+/tools/devrelay/cmd/devrelay/devrelay
+/tools/devrelay/cmd/stubmap/stubmap
 
 # Packaging output
 dist/

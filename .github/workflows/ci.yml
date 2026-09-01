@@ -16,6 +16,13 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      # The integration tests drive the real session against tools/devrelay, and
+      # skip themselves when Go is absent. Installing it here is what makes them
+      # actually run in CI rather than silently pass.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
       # ValheimRelay.Plugin is deliberately not built here: it references game
       # assemblies from a local Valheim install, which must never be committed
       # or redistributed. Core carries the logic, and Core is what CI protects.
@@ -25,8 +32,18 @@ jobs:
       - name: Build
         run: dotnet build ValheimRelay.sln --no-restore -c Release
 
+      # A skipped test is not a passing test. The integration suite is the only
+      # thing exercising the real transport and the real relay contract, so a
+      # skip here means CI checked less than it appears to have — which is how
+      # the whole devrelay fixture once went missing while CI stayed green.
       - name: Test
-        run: dotnet test ValheimRelay.sln --no-build -c Release --verbosity normal
+        run: |
+          set -euo pipefail
+          dotnet test ValheimRelay.sln --no-build -c Release --verbosity normal 2>&1 | tee test-output.txt
+          if grep -qE "Skipped: *[1-9]" test-output.txt; then
+            echo "::error::Tests were skipped; the integration suite must run in CI."
+            exit 1
+          fi
 
   devrelay:
     name: Dev relay

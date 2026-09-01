@@ -868,6 +868,39 @@ player would report but nobody could reproduce.
 
 Each has a test in `RegressionTests` named for the failure it prevents.
 
+### 12.14 The fixture was never committed, and CI did not notice
+
+Worth recording as a process finding rather than a code one, because the same
+shape will recur.
+
+`.gitignore` carried `tools/**/devrelay` and `tools/**/stubmap`, meant to keep
+compiled Go binaries out of the repository. `**` matches zero or more path
+segments, so those patterns also matched the `tools/devrelay` **directory** —
+and the entire dev relay and stub map were never committed. Three commits
+described them in detail. `git status` stayed clean throughout, because ignored
+files are not reported as untracked.
+
+CI did not catch it, and the reason is the more useful half: the integration
+tests skip themselves when the Go toolchain is unavailable, and
+`DevRelay.TryStart` swallowed *every* exception on the way to that decision —
+including "the fixture directory does not exist". So seven tests reported as
+skipped, the job reported success, and the only thing exercising the real
+transport had silently been doing nothing.
+
+Three fixes:
+
+- The ignore rules are now anchored to the exact binary paths, so no pattern can
+  match a directory.
+- `TryStart` returns null only for a genuinely absent `go` binary. Every other
+  failure propagates and fails the test, because a test that cannot run must say
+  so loudly enough to fail a build.
+- CI installs Go and **fails the job if any test skipped**. A skipped test is not
+  a passing test, and the integration suite is the only thing covering the real
+  transport and the real relay contract.
+
+The general lesson: `git status` being clean is not evidence that work is
+committed. `git ls-files` on a new directory is, and it costs nothing.
+
 ### 12.12 Still open, and needing a decision
 
 1. ~~**§11.2, the default `RelayUrl`.**~~ **Settled:**
