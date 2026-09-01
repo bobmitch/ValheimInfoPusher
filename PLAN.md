@@ -603,3 +603,246 @@ accident:
 5. **Exploration/fog sharing** (`Minimap.m_explored`) is an obvious v2 feature and
    an obvious way to blow past the 8192-byte frame limit. Out of scope for v1;
    if it happens, it needs its own chunked design.
+
+---
+
+## 12. Addendum — gaps found while implementing
+
+Written after building §§1–5 and M1. Each entry is something the plan as
+originally written either gets wrong, leaves undefined at a point where two
+implementers would diverge, or does not mention at all. Where the fix is already
+implemented it says so and names the test that holds it.
+
+Numbering is stable; treat these as amendments to the sections they cite.
+
+### 12.1 `uid` as specified is not anonymous
+
+§8 says `uid` "should be a hash of the local profile id, not a raw Steam ID". A
+bare hash does not achieve what that sentence is for. A Valheim profile id
+derives from a Steam ID, and the space of real Steam IDs is small and
+enumerable — anyone with a list can hash the lot and invert an unsalted SHA-256
+by lookup in seconds. The `uid` would then be a raw account identifier wearing a
+disguise, in every browser in the room, which is the exact outcome §8 wants to
+avoid.
+
+**Fix, implemented:** HMAC-SHA256 keyed with a random 32-byte per-install salt,
+truncated to 64 bits. `uid` stays stable for as long as the install lives, which
+is all §3.1 asks of it, and carries no recoverable account identifier. The salt
+sits beside the config; losing it costs nothing but a new identity.
+
+`StableUid`, and `StableUidTests.IsNotAnUnsaltedHashOfTheProfileId`.
+
+### 12.2 The double-create race the tiebreak is for cannot be staggered by rank
+
+§5.1 elects the host, or the lowest peer id, and §5.1's tiebreak cleans up when
+two clients create anyway. The obvious cheap mitigation — delay creation by the
+client's rank in the election ordering — does not work, and it is worth writing
+down why, because it looks like it should.
+
+The race is two clients loading simultaneously, each with a peer list that does
+not yet contain the other. Both therefore believe they are the lowest id, and
+both are **rank 0**. A client at rank above 0 is by definition not the elected
+creator and never reaches the creation path at all, so a rank-based stagger
+delays nobody.
+
+**Fix, implemented:** stagger by a deterministic mix of the client's own peer
+id, spread over a few seconds, with the host always at zero. Two clients that
+cannot see each other still get different delays, so the later one hears the
+earlier one's announcement during its wait and joins instead of creating. The
+tiebreak remains for when this does not save us.
+
+`CreatorElection.CreationStagger`, and
+`ACodeArrivingDuringTheStaggerIsJoinedInsteadOfCreating`.
+
+### 12.3 The tiebreak needs a generation, and needs to forget the losing token
+
+Two problems with "the lexicographically smaller code wins" taken alone.
+
+**The losing creator still holds a token.** §5.1 says it disconnects and joins
+the winner, and stops there. But it persisted `{code, token}` for this world
+under §5.3, and that entry now points at the room it just abandoned. On the next
+load of that world it will reclaim that dead room in preference to discovering
+the live one — and split the group again, silently, every single time.
+
+**A rotation inverts the rule.** After §5.3's rotation the group is deliberately
+on a *new* code, which may sort larger than the dead one. A peer that has not
+noticed the rotation re-announces the old code, and "smaller wins" hands the
+whole group back to a room the relay has already swept.
+
+**Fix, implemented:** announcements carry a monotonic epoch. A later generation
+always beats an earlier one; the code comparison only breaks ties *within* a
+generation, which is the case it was actually written for. A new room claims one
+past anything heard. Separately, codes that answered with 4004 are remembered as
+dead — keyed by generation, so a creator legitimately reclaiming its old code in
+a later generation is still heard. And the losing creator discards its stored
+entry at the moment it loses.
+
+`CodeArbiter`, and `TheLosingCreatorAlsoDiscardsItsTokenForTheAbandonedRoom`,
+`ALaterGenerationBeatsASmallerCode`, `ADeadCodeIsNotRejoinedWhenAPeerAnnouncesItAgain`.
+
+### 12.4 Markers do not survive the thing players actually do
+
+§3.4 says markers are "persistent for the life of the session". Nothing stores
+them. §3.5 has `request_state` replay `hello` and a `position` and nothing else.
+So the moment a browser reloads — the single most likely thing that happens to a
+web map — every marker in the session is gone, and the protocol says they should
+not be.
+
+**Fix, implemented:** each mod keeps the markers it created and replays them
+alongside its `hello`. A mod replays only its *own*; map-originated markers are
+the map's to remember, and a mod re-announcing them would let two maps
+resurrect a marker a third client deleted. Capped at 64 per mod so the replay
+cannot become every new map's join cost.
+
+`MarkerStore`, and `RequestStateAlsoReplaysOurMarkersSoAReloadedMapDoesNotLoseThem`.
+
+**Open, for the map:** the map must persist its own markers locally. Nothing in
+this repository can make that happen.
+
+### 12.5 `request_state` inside the cooldown
+
+§3.5 caps the reply at one per 5 s but does not say what happens to a request
+that arrives inside that window. Dropped, or answered late? Two implementers
+will choose differently, and dropping is worse than it looks: a map that reloads
+one second after another map gets no world block at all until the 60 s `hello`
+heartbeat, which reads as a broken map.
+
+**Fix, implemented:** coalesced, not dropped. A request inside the cooldown sets
+a pending flag and one reply goes out when the window expires. Eight browsers
+reloading at once still produce exactly one replay, which is what the cap is for.
+
+`ARequestArrivingInsideTheCooldownIsAnsweredWhenItExpires`.
+
+**Also, and this belongs in §3.5's wording:** a map sends `request_state` right
+after `welcome` — not optionally. The harness here modelled it as optional at
+first and two integration tests failed, which is exactly how a map author would
+discover it.
+
+### 12.6 States the wire format cannot express
+
+Three things the map needs to distinguish and §3 gives it no way to.
+
+**Opted out vs. gone.** §7's `ShareMyPosition = false` is specified to keep the
+player in the session (§8, correctly — an all-or-nothing switch pushes people to
+uninstall). But that player's `position` frames simply stop, which on the wire is
+indistinguishable from a client that has frozen or dropped. The map shows them as
+a ghost standing wherever they last were.
+**Fix, implemented:** `hello` carries `"share": false`. Omitted when true, so
+older maps are unaffected.
+
+**Dead vs. standing very still.** A dead player's last position is their corpse.
+Without a flag the map draws them as alive and stationary, indefinitely.
+**Fix, implemented:** `position` carries `"dead": true` when dead. Note this
+cannot be inferred from `hp`, which §7 gates behind `ShareHealth`.
+
+**Still vs. stopped.** Once positions are sent only on movement (below), silence
+becomes ambiguous.
+**Fix, implemented:** a keepalive position every 10 s regardless of movement.
+
+### 12.7 There is no local player most of the time you might ask
+
+Not mentioned anywhere in §4.3, and cheap to get wrong. `Player.m_localPlayer` is
+null while loading, while dead before respawn, and in menus. The tempting
+handling — send a default sample — is badly wrong here, because the world origin
+is a real place in Valheim: every such player would appear standing on the spawn
+stone, and a map watching a group mid-load would show a crowd on it.
+
+**Fix, implemented:** `GameBridge.TryReadPosition` returns false and the frame is
+simply not sent.
+
+### 12.8 §3.6's budget assumes telemetry nobody needs
+
+§3.6 budgets 16 players × 1 Hz unconditionally. Most of those frames are a player
+standing at a workbench sending byte-identical data. A dead-band — 1 m of
+movement, 5° of turn, any health or biome or death change — cuts the steady-state
+cost to near zero for a stationary group at no cost in fidelity, with the
+keepalive in §12.6 underneath it so silence stays meaningful.
+
+`PositionThrottle`.
+
+### 12.9 The relay is not in this repository
+
+§10 says to test "against the real relay" by running this repository locally with
+`make run`; §9's M2 says to point the plugin at `ws://localhost:8080/ws`; §1 is
+written as a restatement of a `main.go` that lives here. None of it is here. This
+repository contains PLAN.md and the mod; the relay is deployed from elsewhere.
+
+As written, then, the plan's entire integration testing strategy has nothing to
+run against.
+
+**Fix, implemented:** `tools/devrelay` implements the §1 contract as a clearly
+labelled development fixture, with its limits exposed as flags so a test can
+reach `MAX_MODS_PER_ROOM` with two clients. It is not a specification — where it
+disagrees with the production relay, the production relay is right, and the
+disagreement is a bug here.
+
+**Still open:** whether the real relay should be vendored, submoduled, or left
+where it is. That is a decision about how these two repositories relate and it
+should be made deliberately rather than by leaving §10 pointing at nothing.
+
+### 12.10 Backpressure as described cannot be implemented as described
+
+§4.2 says the outbound queue "drops the oldest `position` frame and never drops
+a `ping` or `marker`". A single FIFO cannot do that without scanning, and the
+description quietly assumes one.
+
+**Fix, implemented:** split the structure instead — one overwrite slot for the
+latest position, one bounded FIFO for frames that must not be lost, reliable
+drained first. That is the intended policy exactly, in O(1), and it makes
+"a marker never waits behind telemetry" true as well as "a marker is never
+dropped". When the reliable lane is genuinely full it refuses the *newest*
+frame rather than the oldest, because dropping the head would reorder a marker
+add/remove pair into a resurrection.
+
+`OutboundQueue`.
+
+### 12.11 Smaller things, decided
+
+- **A deliberate close looks exactly like a dropped connection.** Migrating to a
+  winning code closes the socket, and the resulting close event was being read as
+  connection loss and scheduling a reconnect over the top of the join. Deliberate
+  closes are now counted and ignored. `MigratingDoesNotLeaveAPhantomReconnectBehind`.
+- **A reconnect must resume the room, not create a new one.** After a generic
+  drop, a creator that reconnects with no code gets a *new* room and strands
+  every peer and browser on the old code. The code and token from `welcome` are
+  now retained for exactly this.
+  `AGenericDropReconnectsToTheSameRoomRatherThanCreatingANewOne`.
+- **A rotation was being announced as a fresh session.** The player-facing "your
+  code changed" in §5.3 depends on remembering the previous code across the
+  disconnect that killed it, which the obvious implementation does not.
+  `ARotatedCodeIsAnnouncedToThePlayerAsAChange`.
+- **`RelayUrl` needs normalising.** Players will paste `https://`, or a bare
+  host, or omit `/ws`. All three are absorbed; a scheme-less host defaults to
+  `wss://` so nobody ends up unencrypted by accident. `RelayUrl`.
+- **The chat fallback exposes the credential to unmodded players.** §5.1 notes
+  they "see one odd line" but frames it as cosmetic. It is not only cosmetic:
+  §8 establishes the code *is* the credential, so the fallback broadcasts it to
+  everyone in the world, modded or not. They are already in your world so the
+  exposure is small — but it is why chat is the fallback rather than the default,
+  why the message is sent once rather than on the heartbeat, and it belongs in
+  the Thunderstore privacy note.
+- **`ClientWebSocket` is in netstandard2.0.** So §4.4's preferred option needs no
+  bundled library and no package reference. M0(a) is narrowed to "does Valheim's
+  Mono runtime carry a working one, TLS included".
+
+### 12.12 Still open, and needing a decision
+
+1. **§11.2, the default `RelayUrl`.** Unchanged and blocking a release: shipping
+   a default means hosting an instance and owning its capacity; shipping none
+   means every user edits a config, which breaks §2's product goal outright.
+   Currently defaulted to `ws://localhost:8080/ws` so the mod is runnable, which
+   is not a shippable answer.
+2. **§11.1, the dedicated server.** Needs M0(b). The mod degrades automatically
+   either way, so this is a documentation and support-burden question rather than
+   a design one now.
+3. **§11.3, the map URL format.** `MapUrl` builds `<base>/#<code>`. The map has
+   to agree, and nothing here can make that happen.
+4. **Reclaim only fires for the elected creator.** A client that created the
+   session last time but is not elected this time leaves its stored entry unused
+   and the group gets a new code. Correct, but it quietly narrows §5.3's promise
+   in multiplayer; in single-player, where the promise matters most, it always
+   holds.
+5. **Marker ids are not reused across a reconnect.** The sequence resets with the
+   session, and ids are namespaced by `uid`, so a reconnecting client can emit an
+   id it used earlier in the same session. Harmless today because a reconnect
+   replays the markers anyway, but it is an assumption worth not building on.

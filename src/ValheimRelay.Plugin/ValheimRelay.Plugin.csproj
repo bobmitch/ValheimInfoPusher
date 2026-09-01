@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    This project references Valheim's own assemblies, so it only builds on a
+    machine with the game installed:
+
+      export VALHEIM_INSTALL="$HOME/.steam/steam/steamapps/common/Valheim"
+      dotnet build src/ValheimRelay.Plugin
+
+    It is deliberately NOT in ValheimRelay.sln. Keeping it out is what lets
+    `dotnet build` and CI work on any machine while still protecting Core, which
+    is where the logic lives (§4.1) and where the tests are. Game DLLs are never
+    committed or redistributed.
+  -->
+
+  <PropertyGroup>
+    <!-- BepInEx 5 on Valheim. Confirm against the game's Unity version (§4.5). -->
+    <TargetFramework>net472</TargetFramework>
+    <RootNamespace>ValheimRelay.Plugin</RootNamespace>
+    <AssemblyName>ValheimRelay</AssemblyName>
+    <Version>0.1.0</Version>
+    <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
+
+    <!-- Nothing here should end up in BepInEx/plugins except our own assembly. -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <Target Name="RequireValheimInstall" BeforeTargets="BeforeBuild" Condition="'$(HaveValheimManaged)' != 'true'">
+    <!--
+      A clear message beats a hundred "the type or namespace name 'ZNet' could
+      not be found" errors, which is what a missing install otherwise produces.
+    -->
+    <Error Code="VRELAY001"
+           Text="ValheimRelay.Plugin needs the game's assemblies. Set VALHEIM_INSTALL to your Valheim directory (looked for '$(ValheimManaged)'). Core and its tests build without it: `dotnet build ValheimRelay.sln`." />
+  </Target>
+
+  <ItemGroup Condition="'$(HaveValheimManaged)' == 'true'">
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" />
+    <PackageReference Include="BepInEx.PluginInfoProps" Version="2.1.0" />
+    <PackageReference Include="HarmonyX" Version="2.10.2" />
+    <PackageReference Include="BepInEx.AssemblyPublicizer.MSBuild" Version="0.4.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(HaveValheimManaged)' == 'true'">
+    <!--
+      Publicized so the private fields §4.3 needs (WorldGenerator.m_world and
+      friends) are reachable without reflection at every call site.
+    -->
+    <Reference Include="assembly_valheim" HintPath="$(ValheimManaged)/assembly_valheim.dll" Publicize="true" Private="false" />
+    <Reference Include="assembly_utils" HintPath="$(ValheimManaged)/assembly_utils.dll" Publicize="true" Private="false" />
+    <Reference Include="UnityEngine" HintPath="$(ValheimManaged)/UnityEngine.dll" Private="false" />
+    <Reference Include="UnityEngine.CoreModule" HintPath="$(ValheimManaged)/UnityEngine.CoreModule.dll" Private="false" />
+    <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ValheimManaged)/UnityEngine.IMGUIModule.dll" Private="false" />
+    <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(ValheimManaged)/UnityEngine.InputLegacyModule.dll" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../ValheimRelay.Core/ValheimRelay.Core.csproj" />
+  </ItemGroup>
+
+</Project>

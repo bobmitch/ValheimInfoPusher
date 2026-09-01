@@ -490,4 +490,50 @@ namespace ValheimRelay.Core.Tests
             Assert.Equal(expected, PositionThrottle.AngleDelta(a, b), 6);
         }
     }
+
+    public class RelayUrlTests
+    {
+        [Theory]
+        [InlineData("wss://relay.example/ws", "wss://relay.example/ws")]
+        [InlineData("ws://localhost:8080/ws", "ws://localhost:8080/ws")]
+        // The mistakes a player handed an address by a friend will actually make.
+        [InlineData("https://relay.example/ws", "wss://relay.example/ws")]
+        [InlineData("http://localhost:8080/ws", "ws://localhost:8080/ws")]
+        [InlineData("relay.example", "wss://relay.example/ws")]
+        [InlineData("wss://relay.example", "wss://relay.example/ws")]
+        [InlineData("wss://relay.example/", "wss://relay.example/ws")]
+        [InlineData("  wss://relay.example/ws  ", "wss://relay.example/ws")]
+        [InlineData("WSS://RELAY.EXAMPLE/WS", "WSS://RELAY.EXAMPLE/WS")]
+        public void AbsorbsThePasteMistakesPlayersMake(string input, string expected)
+        {
+            Assert.Equal(expected, RelayUrl.Normalise(input));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData("///")]
+        public void FallsBackRatherThanProducingAnUnusableUrl(string? input)
+        {
+            Assert.Equal("ws://fallback/ws", RelayUrl.Normalise(input, "ws://fallback/ws"));
+        }
+
+        [Fact]
+        public void ASchemelessHostDefaultsToTheSecureScheme()
+        {
+            // A player pasting a hostname must not silently end up unencrypted.
+            Assert.StartsWith("wss://", RelayUrl.Normalise("relay.example"));
+        }
+
+        [Theory]
+        [InlineData("ws://relay.example/ws", true)]
+        [InlineData("ws://localhost:8080/ws", false)]
+        [InlineData("ws://127.0.0.1:8080/ws", false)]
+        [InlineData("wss://relay.example/ws", false)]
+        public void InsecureUrlsAreFlaggedExceptForLocalDevelopment(string url, bool insecure)
+        {
+            Assert.Equal(insecure, RelayUrl.IsInsecure(url));
+        }
+    }
 }
