@@ -1,0 +1,249 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Builds the ValheimRelay BepInEx plugin on a PC with Valheim installed.
+
+.DESCRIPTION
+    Core and its tests build anywhere (`dotnet test ValheimRelay.sln`). The
+    plugin is different: it references the game's own assemblies, so it needs a
+    real install. This script finds that install, checks the toolchain, builds,
+    and optionally copies the result into BepInEx/plugins.
+
+    Deliberately ASCII-only: Windows PowerShell 5.1 reads unsigned scripts as
+    ANSI unless they carry a BOM, and a stray non-ASCII character in a string
+    turns into mojibake on someone else's code page.
+
+.PARAMETER ValheimInstall
+    The Valheim directory (the one containing valheim_Data). Defaults to
+    $env:VALHEIM_INSTALL, then to whatever Steam's registry key and library
+    folders turn up.
+
+.PARAMETER Configuration
+    Debug or Release. Defaults to Release.
+
+.PARAMETER Deploy
+    Copy the built assemblies into BepInEx/plugins/ValheimRelay after building.
+
+.PARAMETER PluginsDir
+    Where -Deploy copies to. Defaults to <install>/BepInEx/plugins/ValheimRelay.
+    Point this at a profile directory if you manage mods with r2modman.
+
+.PARAMETER SkipTests
+    Skip the Core test run. The tests need no game and catch a broken toolchain
+    before the game references can confuse the diagnosis, so prefer leaving
+    them on.
+
+.PARAMETER Clean
+    Delete bin/ and obj/ under the plugin first. Do this after a game update:
+    the publicized copy of assembly_valheim is cached in obj/ and will
+    otherwise be reused against the new game version.
+
+.EXAMPLE
+    .\build.ps1
+
+.EXAMPLE
+    .\build.ps1 -Deploy
+
+.EXAMPLE
+    .\build.ps1 -Clean -Deploy -ValheimInstall 'D:\Steam\steamapps\common\Valheim'
+#>
+[CmdletBinding()]
+param(
+    [string] $ValheimInstall,
+    [ValidateSet('Debug', 'Release')]
+    [string] $Configuration = 'Release',
+    [switch] $Deploy,
+    [string] $PluginsDir,
+    [switch] $SkipTests,
+    [switch] $Clean
+)
+
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+
+$RepoRoot    = $PSScriptRoot
+$PluginProj  = Join-Path $RepoRoot 'src\ValheimRelay.Plugin'
+$Solution    = Join-Path $RepoRoot 'ValheimRelay.sln'
+
+function Write-Step { param([string] $Text) Write-Host "`n==> $Text" -ForegroundColor Cyan }
+function Write-Note { param([string] $Text) Write-Host "    $Text" -ForegroundColor DarkGray }
+
+function Invoke-Dotnet {
+    # dotnet reports failure through the exit code, not through a terminating
+    # error, so $ErrorActionPreference alone will not stop a broken build from
+    # marching on to the deploy step.
+    param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $Arguments)
+    Write-Note "dotnet $($Arguments -join ' ')"
+    & dotnet @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "dotnet $($Arguments -join ' ') failed with exit code $LASTEXITCODE."
+    }
+}
+
+function Get-SteamLibraryRoots {
+    $roots = @()
+    # Only Windows has the registry key; on pwsh elsewhere fall through and let
+    # -ValheimInstall or $env:VALHEIM_INSTALL do the work.
+    if ($env:OS -eq 'Windows_NT') {
+        foreach ($key in 'HKCU:\Software\Valve\Steam', 'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam') {
+            $prop = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
+            if ($prop -and $prop.PSObject.Properties['SteamPath'])        { $roots += $prop.SteamPath }
+            if ($prop -and $prop.PSObject.Properties['InstallPath'])      { $roots += $prop.InstallPath }
+        }
+        $roots += 'C:\Program Files (x86)\Steam'
+    }
+
+    # Steam keeps additional drives in libraryfolders.vdf, with backslashes
+    # escaped. A second library is the common case once the C: drive fills up.
+    foreach ($root in @($roots)) {
+        $vdf = Join-Path $root 'steamapps\libraryfolders.vdf'
+        if (Test-Path -LiteralPath $vdf) {
+            $matched = Select-String -Path $vdf -Pattern '"path"\s+"(.+?)"' -AllMatches
+            if ($matched) {
+                foreach ($m in $matched.Matches) {
+                    $roots += ($m.Groups[1].Value -replace '\\\\', '\')
+                }
+            }
+        }
+    }
+
+    $roots | Where-Object { $_ } | Select-Object -Unique
+}
+
+function Resolve-ValheimInstall {
+    param([string] $Explicit)
+
+    $candidates = @()
+    if ($Explicit)              { $candidates += $Explicit }
+    if ($env:VALHEIM_INSTALL)   { $candidates += $env:VALHEIM_INSTALL }
+    $candidates += (Get-SteamLibraryRoots | ForEach-Object { Join-Path $_ 'steamapps\common\Valheim' })
+
+    foreach ($candidate in ($candidates | Where-Object { $_ })) {
+        # assembly_valheim.dll, not just the folder: an uninstall leaves the
+        # directory behind, and a hit on an empty one produces a build failure
+        # that reads like a compiler problem.
+        $probe = Join-Path $candidate 'valheim_Data\Managed\assembly_valheim.dll'
+        if (Test-Path -LiteralPath $probe) {
+            return (Resolve-Path -LiteralPath $candidate).ProviderPath
+        }
+    }
+
+    if ($Explicit) {
+        throw "No Valheim install at '$Explicit' (looked for valheim_Data\Managed\assembly_valheim.dll)."
+    }
+    throw @"
+Could not find Valheim. Pass the directory explicitly:
+
+    .\build.ps1 -ValheimInstall 'D:\Steam\steamapps\common\Valheim'
+
+It is the folder containing valheim_Data. Core and its tests build without it:
+
+    dotnet test ValheimRelay.sln
+"@
+}
+
+function Assert-DotnetSdk {
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if (-not $dotnet) {
+        throw @"
+The .NET SDK is not on PATH. Install it, then open a new shell:
+
+    winget install --id Microsoft.DotNet.SDK.8 -e
+"@
+    }
+
+    # The tests target net8.0; the plugin needs an SDK new enough to target
+    # net472 with the reference-assemblies package. An 8.0 SDK covers both.
+    $majors = & dotnet --list-sdks |
+        ForEach-Object { if ($_ -match '^(\d+)\.') { [int] $Matches[1] } }
+    if (-not $majors -or (($majors | Measure-Object -Maximum).Maximum -lt 8)) {
+        throw "Need .NET SDK 8.0 or newer. Found: $((& dotnet --list-sdks) -join '; ')"
+    }
+    Write-Note "dotnet SDK $((& dotnet --version))"
+}
+
+# --- build ------------------------------------------------------------------
+
+Write-Step 'Checking the toolchain'
+Assert-DotnetSdk
+
+Write-Step 'Locating Valheim'
+$install = Resolve-ValheimInstall -Explicit $ValheimInstall
+Write-Note $install
+# Directory.Build.props reads this; setting it here means the caller does not
+# have to, and a -ValheimInstall argument beats a stale persisted variable.
+$env:VALHEIM_INSTALL = $install
+
+if ($Clean) {
+    Write-Step 'Cleaning'
+    foreach ($dir in 'bin', 'obj') {
+        $path = Join-Path $PluginProj $dir
+        if (Test-Path -LiteralPath $path) {
+            Write-Note "removing $path"
+            Remove-Item -LiteralPath $path -Recurse -Force
+        }
+    }
+}
+
+if (-not $SkipTests) {
+    Write-Step 'Testing Core (no game required)'
+    Invoke-Dotnet test $Solution -c $Configuration
+}
+
+Write-Step "Building the plugin ($Configuration)"
+Invoke-Dotnet build $PluginProj -c $Configuration
+
+# AppendTargetFrameworkToOutputPath is off in the csproj, so the output is flat.
+$outDir = Join-Path $PluginProj "bin\$Configuration"
+$artifacts = @(
+    (Join-Path $outDir 'ValheimRelay.dll'),
+    (Join-Path $outDir 'ValheimRelay.Core.dll')
+)
+foreach ($artifact in $artifacts) {
+    if (-not (Test-Path -LiteralPath $artifact)) {
+        throw "Build reported success but '$artifact' is missing."
+    }
+}
+
+Write-Step 'Built'
+foreach ($artifact in $artifacts) { Write-Host "    $artifact" }
+
+# --- deploy -----------------------------------------------------------------
+
+if (-not $Deploy) {
+    Write-Host "`nRe-run with -Deploy to copy these into BepInEx/plugins." -ForegroundColor DarkGray
+    return
+}
+
+if (-not $PluginsDir) {
+    $PluginsDir = Join-Path $install 'BepInEx\plugins\ValheimRelay'
+}
+
+Write-Step "Deploying to $PluginsDir"
+
+# A missing BepInEx is the single most common reason a correctly built plugin
+# does nothing at all, and it is silent: the game just starts normally.
+$bepInExRoot = Join-Path $install 'BepInEx'
+if (-not (Test-Path -LiteralPath $bepInExRoot)) {
+    Write-Warning @"
+No BepInEx directory in the game folder. Install the BepInEx pack for Valheim
+(Thunderstore: denikson-BepInExPack_Valheim) and launch the game once, or the
+plugin will never be loaded. Copying anyway.
+"@
+}
+
+New-Item -ItemType Directory -Force -Path $PluginsDir | Out-Null
+
+$toCopy = $artifacts
+if ($Configuration -eq 'Debug') {
+    $toCopy += @(Get-ChildItem -Path $outDir -Filter 'ValheimRelay*.pdb' -ErrorAction SilentlyContinue |
+                 ForEach-Object { $_.FullName })
+}
+
+foreach ($file in $toCopy) {
+    Write-Note "copy $(Split-Path -Leaf $file)"
+    Copy-Item -LiteralPath $file -Destination $PluginsDir -Force
+}
+
+Write-Step 'Done'
+Write-Host "    Launch Valheim, then check $bepInExRoot\LogOutput.log for a ValheimRelay line."
