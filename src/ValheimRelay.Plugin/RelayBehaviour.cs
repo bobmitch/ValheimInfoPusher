@@ -159,7 +159,13 @@ namespace ValheimRelay.Plugin
                 case NoticeKind.SessionStarted:
                     if (_plugin.Settings.AnnounceInChat.Value && notice.Code != null)
                     {
-                        _bridge.LocalMessage("map code " + notice.Code + "  (F9 for the panel)");
+                        // The link is the useful thing to copy, but the code is
+                        // the thing you read aloud over voice chat — which is
+                        // what the Crockford alphabet exists for (§1.1) — so the
+                        // line carries both.
+                        _bridge.LocalMessage(_plugin.Settings.HasMapLink
+                            ? notice.Code + "  ·  " + _plugin.Settings.BuildShareText(notice.Code) + "  (F9 to copy)"
+                            : "map code " + notice.Code + "  (F9 for the panel)");
                     }
                     break;
 

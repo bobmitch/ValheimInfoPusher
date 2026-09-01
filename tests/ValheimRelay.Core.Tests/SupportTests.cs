@@ -587,4 +587,98 @@ namespace ValheimRelay.Core.Tests
             Assert.Equal(insecure, RelayUrl.IsInsecure(url));
         }
     }
+
+    public class MapLinkTests
+    {
+        private const string Code = "K7MQ2XR4";
+
+        [Fact]
+        public void APathHostedMapDoesNotGetAnExtraSlashBeforeTheFragment()
+        {
+            // §11.3 wrote the form as "<base>/#<code>", which for a map at a
+            // path produces "/valheim/#CODE" and depends on the server
+            // redirecting the trailing slash. Plenty do not.
+            Assert.Equal("https://bobmitch.com/valheim#" + Code, MapLink.Build("https://bobmitch.com/valheim", Code));
+        }
+
+        [Fact]
+        public void ARootHostedMapKeepsTheSlashSoTheUrlIsWellFormed()
+        {
+            Assert.Equal("https://map.example/#" + Code, MapLink.Build("https://map.example", Code));
+        }
+
+        [Theory]
+        [InlineData("bobmitch.com/valheim")]
+        [InlineData("https://bobmitch.com/valheim")]
+        [InlineData("https://bobmitch.com/valheim/")]
+        [InlineData("  https://bobmitch.com/valheim  ")]
+        [InlineData("https://bobmitch.com/valheim#STALECODE")]
+        public void AbsorbsThePasteMistakesPlayersMake(string configured)
+        {
+            Assert.Equal("https://bobmitch.com/valheim#" + Code, MapLink.Build(configured, Code));
+        }
+
+        [Fact]
+        public void ASchemelessAddressBecomesHttps()
+        {
+            Assert.StartsWith("https://", MapLink.Build("bobmitch.com/valheim", Code));
+        }
+
+        [Fact]
+        public void AWebsocketSchemeIsCorrectedBecauseBrowsersDoNotSpeakIt()
+        {
+            // Pasting the relay address into MapUrl is the obvious mix-up.
+            Assert.Equal("https://bobmitch.com/valheim#" + Code, MapLink.Build("wss://bobmitch.com/valheim", Code));
+            Assert.Equal("http://localhost:3000/#" + Code, MapLink.Build("ws://localhost:3000", Code));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        [InlineData("   ")]
+        [InlineData("not a url at all")]
+        public void WithoutAUsableMapThePlayerGetsTheBareCodeNotABrokenLink(string? configured)
+        {
+            // Handing someone a link that does not resolve is worse than
+            // handing them the code and letting them find the map.
+            Assert.Equal(Code, MapLink.Build(configured, Code));
+        }
+
+        [Fact]
+        public void AQueryStringOnTheMapUrlIsPreserved()
+        {
+            Assert.Equal("https://map.example/v2?theme=dark#" + Code,
+                MapLink.Build("https://map.example/v2?theme=dark", Code));
+        }
+
+        [Fact]
+        public void TheCodeGoesInTheFragmentSoItNeverReachesTheMapsServer()
+        {
+            // §8: the code is the credential. A fragment is the only part of a
+            // URL the browser does not send, so it stays out of access logs,
+            // referrer headers and page analytics.
+            var link = MapLink.Build(MapLink.Default, Code);
+            var uri = new Uri(link);
+
+            Assert.Equal("#" + Code, uri.Fragment);
+            Assert.DoesNotContain(Code, uri.Query);
+            Assert.DoesNotContain(Code, uri.AbsolutePath);
+        }
+
+        [Fact]
+        public void TheShippedMapDefaultIsAlreadyCanonical()
+        {
+            // Compiled into every install: a typo fails for every player at once.
+            Assert.Equal(MapLink.Default, MapLink.Normalise(MapLink.Default));
+            Assert.StartsWith("https://", MapLink.Default);
+            Assert.True(Uri.TryCreate(MapLink.Default, UriKind.Absolute, out _));
+            Assert.EndsWith("#" + Code, MapLink.Build(MapLink.Default, Code));
+        }
+
+        [Fact]
+        public void AnEmptyCodeNeverProducesADanglingLink()
+        {
+            Assert.Equal(string.Empty, MapLink.Build(MapLink.Default, ""));
+        }
+    }
 }

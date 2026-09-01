@@ -51,10 +51,9 @@ namespace ValheimRelay.Plugin
         // beside the normalisation rules so it is covered by tests.
         public const string DefaultRelayUrl = RelayUrl.Default;
 
-        // §11.3 is still open: the map's URL format has to be agreed with the
-        // map, and until it is there is no link to build. Empty means the panel
-        // offers the bare code, which works and tells the player nothing false.
-        public const string DefaultMapUrl = "";
+        // §11.3, settled. Shipped alongside the relay default: one without the
+        // other leaves the player holding a bare code with nowhere to put it.
+        public const string DefaultMapUrl = MapLink.Default;
 
         public ConfigEntry<bool> Enabled { get; }
         public ConfigEntry<string> RelayUrl { get; }
@@ -85,12 +84,14 @@ namespace ValheimRelay.Plugin
         /// </summary>
         public static string NormaliseRelayUrl(string raw) => RelayUrl.Normalise(raw, DefaultRelayUrl);
 
-        /// <summary>The one copyable thing to hand a player: a link if one is configured, else the code.</summary>
-        public string BuildShareText(string code)
-        {
-            var mapUrl = (MapUrl.Value ?? string.Empty).Trim();
-            if (mapUrl.Length == 0) return code;
-            return mapUrl.TrimEnd('/') + "/#" + code;
-        }
+        /// <summary>
+        /// The one copyable thing to hand a player: a link if a map is
+        /// configured, the bare code if not. The rules live in Core's
+        /// <see cref="MapLink"/> so they can be tested without the game.
+        /// </summary>
+        public string BuildShareText(string code) => MapLink.Build(MapUrl.Value, code);
+
+        /// <summary>True when there is a map to link to, so the UI can say "link" rather than "code".</summary>
+        public bool HasMapLink => MapLink.Normalise(MapUrl.Value).Length > 0;
     }
 }

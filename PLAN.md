@@ -892,11 +892,24 @@ Each has a test in `RegressionTests` named for the failure it prevents.
 2. **§11.1, the dedicated server.** Needs M0(b). The mod degrades automatically
    either way, so this is a documentation and support-burden question rather than
    a design one now.
-3. **§11.3, the map URL format.** Still open, and now the only thing standing
-   between the player and a single copyable link. `MapUrl` builds
-   `<base>/#<code>` and defaults to empty, so the panel currently offers the
-   bare code — correct, but one step short of the goal in §2. Needs the map's
-   address and its agreement on the fragment form.
+3. ~~**§11.3, the map URL format.**~~ **Settled:** `https://bobmitch.com/valheim`,
+   with the code as a fragment — `https://bobmitch.com/valheim#K7MQ2XR4`. §2's
+   "one paste into one browser textbox" is now met: F9 copies a link.
+
+   Two corrections to the form §11.3 sketched:
+   - It wrote `<base>/#<code>`, which is right for a map at the root of a host
+     and wrong for one at a path. `…/valheim/#CODE` depends on the server
+     redirecting the trailing slash, and plenty do not. The slash is now added
+     only when there is no path.
+   - The fragment is not a stylistic choice and should not be "improved" into a
+     query parameter later. It is the only part of a URL a browser does not send
+     to the server, so it keeps the code — which §8 establishes is the
+     credential — out of the map's access logs, out of referrer headers, and out
+     of whatever analytics the page loads. `?code=` would leak it to all three.
+
+   The map must read the code from `location.hash`. Nothing in this repository
+   can enforce that, so it is the one remaining thing the two halves have to
+   agree on.
 4. **Reclaim only fires for the elected creator.** A client that created the
    session last time but is not elected this time leaves its stored entry unused
    and the group gets a new code. Correct, but it quietly narrows §5.3's promise

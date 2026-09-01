@@ -8,7 +8,9 @@ paste it into the map, and everyone shows up moving in real time.
 - Install the mod, load a world, and a code appears in chat and in the panel.
 - **Other modded players in that world join automatically.** Nobody types
   anything — the code travels over the game's own network.
-- Paste the code into the web map to watch everyone move.
+- Press F9 and hit **Copy map link** — that link opens the map on your session.
+  Or read the code aloud; it is deliberately made of characters that do not
+  sound alike over voice chat.
 - A crash, a restart, or an alt-tab resumes the same session and the same code.
 
 Press **F9** for the panel: the code, a copy button, connection state and player
@@ -31,6 +33,10 @@ a vanilla server.
 **The code is the credential.** Anyone holding it can watch every player in the
 session move, live, for as long as the session lasts. Treat it like a share link,
 not like a room name. Don't post it anywhere public unless you mean to.
+
+The copy button gives you `https://bobmitch.com/valheim#YOURCODE`. The part after
+the `#` is never sent to the web server, so your code stays out of its logs — but
+it is still in the link, so anyone you send the link to can watch your session.
 
 What the mod sends: your display name, your position, your heading, your biome,
 and (if `ShareHealth` is on) your health. What it does not send: your Steam ID or
@@ -57,7 +63,7 @@ Everything is defaulted; a fresh install needs no edits.
 |---|---|---|
 | `Enabled` | `true` | Master switch |
 | `RelayUrl` | `wss://valheimrelay.bobmitch.com/ws` | Relay address. Leave it alone unless you run your own |
-| `MapUrl` | empty | Used to build a copyable link instead of a bare code |
+| `MapUrl` | `https://bobmitch.com/valheim` | The map the copy button links to. Clear it to copy the bare code |
 | `AnnounceInChat` | `true` | Print the code in chat when a session starts (local only) |
 | `ShareMyPosition` | `true` | Broadcast your position |
 | `ShareHealth` | `true` | Include health |

@@ -82,8 +82,7 @@ namespace ValheimRelay.Plugin
             GUILayout.EndArea();
         }
 
-        private string CopyButtonLabel()
-            => string.IsNullOrEmpty(_config.MapUrl.Value?.Trim()) ? "Copy code" : "Copy map link";
+        private string CopyButtonLabel() => _config.HasMapLink ? "Copy map link" : "Copy code";
 
         /// <summary>A small always-visible marker while the session is live (§7).</summary>
         private void DrawIndicator()

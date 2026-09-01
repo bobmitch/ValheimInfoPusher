@@ -17,11 +17,12 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M5 — resilience | **Done in `Core`**, unverified in-game |
 | M6 — packaging | Manifest, README and changelog written; no icon yet |
 
-The mod ships pointed at `wss://valheimrelay.bobmitch.com/ws`, so a fresh
-install needs no config edits — §11.2, settled. **That address has not been
-handshaked yet:** the sandbox this was built in blocks the host at its egress
-proxy. Confirming it takes one command (below) and should be done before
-release.
+The mod ships pointed at `wss://valheimrelay.bobmitch.com/ws` with the map at
+`https://bobmitch.com/valheim`, so a fresh install needs no config edits and F9
+copies a working link — §11.2 and §11.3, both settled. **Neither address has
+been reached from here:** the sandbox this was built in blocks both at its
+egress proxy. Confirming the relay takes one command (below); confirming the map
+means checking it reads the code from `location.hash`.
 
 Everything marked "unverified in-game" is written and reviewed but has never
 been loaded into Valheim, because no machine here has the game. That is the
