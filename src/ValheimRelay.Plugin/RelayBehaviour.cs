@@ -72,8 +72,17 @@ namespace ValheimRelay.Plugin
             _session.MarkerReceived += OnMarkerReceived;
 
             // §8: never a raw platform id. The salt lives beside the config and
-            // makes the digest unlinkable to the account.
-            StableUid.TryDecodeSalt(_reclaim.Salt, out var salt);
+            // makes the digest unlinkable to the account. ReclaimStore.Salt
+            // regenerates anything unusable, so this decode cannot fail — but it
+            // is checked rather than assumed, because the failure mode is an
+            // exception on every world load with no way for a player to recover.
+            if (!StableUid.TryDecodeSalt(_reclaim.Salt, out var salt))
+            {
+                _plugin.Log.Error("could not establish an identity salt; not starting a session");
+                _sessionRunning = false;
+                return;
+            }
+
             var uid = StableUid.Derive(_bridge.ProfileId, salt);
 
             _session.Start(new SessionIdentity(

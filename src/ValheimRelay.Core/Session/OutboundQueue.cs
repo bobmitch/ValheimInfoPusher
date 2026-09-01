@@ -25,6 +25,12 @@ namespace ValheimRelay.Core.Session
         private readonly int _reliableCapacity;
         private string? _latestPosition;
 
+        // The frame handed out by the last TryPeek, and which lane it came from.
+        // Held by reference so a position superseded between peek and commit is
+        // not silently discarded.
+        private string? _peeked;
+        private bool _peekedFromReliable;
+
         public OutboundQueue(int reliableCapacity = 64)
         {
             if (reliableCapacity < 1) throw new ArgumentOutOfRangeException(nameof(reliableCapacity));
@@ -77,26 +83,73 @@ namespace ValheimRelay.Core.Session
             }
         }
 
-        public bool TryDequeue(out string frame)
+        /// <summary>
+        /// Look at the next frame without removing it. Call <see cref="CommitPeek"/>
+        /// once it has actually been handed to the transport.
+        /// <para>
+        /// Peek-then-commit rather than dequeue-then-put-back, because putting a
+        /// refused frame back is not something this structure can do correctly: a
+        /// re-enqueue appends to the tail, which would reorder a marker
+        /// add/remove pair into a resurrection, and a refused *position* has no
+        /// lane to go back to at all — pushing it into the reliable queue would
+        /// promote superseded telemetry above real frames.
+        /// </para>
+        /// </summary>
+        public bool TryPeek(out string frame)
         {
             lock (_gate)
             {
                 if (_reliable.Count > 0)
                 {
-                    frame = _reliable.Dequeue();
+                    _peeked = _reliable.Peek();
+                    _peekedFromReliable = true;
+                    frame = _peeked;
                     return true;
                 }
 
                 if (_latestPosition != null)
                 {
-                    frame = _latestPosition;
-                    _latestPosition = null;
+                    _peeked = _latestPosition;
+                    _peekedFromReliable = false;
+                    frame = _peeked;
                     return true;
                 }
+
+                _peeked = null;
             }
 
             frame = string.Empty;
             return false;
+        }
+
+        /// <summary>Removes the frame handed out by the last <see cref="TryPeek"/>.</summary>
+        public void CommitPeek()
+        {
+            lock (_gate)
+            {
+                if (_peeked == null) return;
+
+                if (_peekedFromReliable)
+                {
+                    if (_reliable.Count > 0 && ReferenceEquals(_reliable.Peek(), _peeked)) _reliable.Dequeue();
+                }
+                else if (ReferenceEquals(_latestPosition, _peeked))
+                {
+                    // Only if it is still the same sample: a newer position may
+                    // have arrived from the main thread while this one was in
+                    // flight, and that one has not been sent.
+                    _latestPosition = null;
+                }
+
+                _peeked = null;
+            }
+        }
+
+        public bool TryDequeue(out string frame)
+        {
+            if (!TryPeek(out frame)) return false;
+            CommitPeek();
+            return true;
         }
 
         /// <summary>
@@ -110,6 +163,7 @@ namespace ValheimRelay.Core.Session
             {
                 _reliable.Clear();
                 _latestPosition = null;
+                _peeked = null;
             }
         }
     }

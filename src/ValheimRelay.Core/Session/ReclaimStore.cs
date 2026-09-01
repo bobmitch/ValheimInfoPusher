@@ -66,11 +66,18 @@ namespace ValheimRelay.Core.Session
             get
             {
                 EnsureLoaded();
-                if (_salt == null)
+
+                // Validate rather than trust: a hand-edited or truncated file
+                // would otherwise hand back something StableUid.Derive throws on,
+                // and that exception escapes into session startup on every load
+                // with no way for the player to recover.
+                if (_salt == null || !Identity.StableUid.TryDecodeSalt(_salt, out _))
                 {
+                    if (_salt != null) _log.Warn("the stored identity salt was unusable; generating a new one");
                     _salt = Identity.StableUid.EncodeSalt(Identity.StableUid.NewSalt());
                     Save();
                 }
+
                 return _salt;
             }
         }

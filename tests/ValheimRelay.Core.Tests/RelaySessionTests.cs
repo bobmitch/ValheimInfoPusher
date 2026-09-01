@@ -346,7 +346,11 @@ namespace ValheimRelay.Core.Tests
             StartAsCreator("MMMMMMMM");
             _channel.PeerAnnounces("AAAAAAAA", 1);
             Tick();
-            Tick(60);
+
+            // Inside the connect timeout: the only thing that could move the
+            // state here is the abandoned connection's close being mistaken for
+            // connection loss, which is what this guards.
+            Tick(10);
 
             Assert.Equal(SessionState.Joining, _session.State);
             Assert.Equal("AAAAAAAA", _transport.Connects.Last().Code);

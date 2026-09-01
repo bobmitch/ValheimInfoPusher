@@ -173,6 +173,7 @@ namespace ValheimRelay.Core.Session
             _markers.Clear();
             _markerSequence = 0;
             _codeShownToPlayer = null;
+            _deliberateCloses = 0;
             _arbiter.ClearCurrent();
             _healthyResetDone = false;
             _backoff.Reset();
@@ -193,7 +194,10 @@ namespace ValheimRelay.Core.Session
                 return;
             }
 
-            CloseTransport(1000, reason);
+            // Not counted as a deliberate close: HandleClosed already returns
+            // early once the state is Stopped, so counting it would leave a
+            // credit behind that swallows the next run's first genuine drop.
+            CloseTransport(1000, reason, expectClose: false);
             _outbound.Clear();
             _markers.Clear();
             _activeCode = null;
@@ -238,6 +242,10 @@ namespace ValheimRelay.Core.Session
                     break;
                 case SessionState.Active:
                     TickActive();
+                    break;
+                case SessionState.Creating:
+                case SessionState.Joining:
+                    TickConnecting();
                     break;
                 case SessionState.Reconnecting:
                     TickReconnecting();
@@ -311,6 +319,22 @@ namespace ValheimRelay.Core.Session
             }
         }
 
+        /// <summary>
+        /// A socket that opens but never delivers <c>welcome</c> — a wedged
+        /// proxy, a half-open connection, a relay mid-restart — would otherwise
+        /// leave the session in Creating or Joining for ever, with no retry and
+        /// nothing said to the player.
+        /// </summary>
+        private void TickConnecting()
+        {
+            if (_clock.Elapsed - _stateEnteredAt < _options.ConnectTimeout) return;
+
+            _log.Warn("no welcome within " + _options.ConnectTimeout.TotalSeconds + "s; retrying");
+            CloseTransport(1000, "connect timed out");
+            ScheduleRetry(_backoff.Next());
+            Raise(new SessionNotice(NoticeKind.Reconnecting, "reconnecting to the relay"));
+        }
+
         private void TickReconnecting()
         {
             if (_clock.Elapsed < _retryAt) return;
@@ -321,15 +345,13 @@ namespace ValheimRelay.Core.Session
         private void PumpOutbound()
         {
             if (_transport.State != TransportState.Open) return;
-            while (_outbound.TryDequeue(out var frame))
+            while (_outbound.TryPeek(out var frame))
             {
-                if (_transport.Send(frame)) continue;
-
-                // The transport refused: its own buffer is saturated. Put the
-                // frame back at the front of the reliable lane rather than losing
-                // it, and stop draining until the next tick.
-                _outbound.EnqueueReliable(frame);
-                break;
+                // The frame is only removed once the transport has taken it. A
+                // refusal leaves it exactly where it was, in order, and draining
+                // resumes next tick.
+                if (!_transport.Send(frame)) break;
+                _outbound.CommitPeek();
             }
         }
 
@@ -691,6 +713,16 @@ namespace ValheimRelay.Core.Session
         {
             if (string.Equals(_activeCode, announcement.Code, StringComparison.OrdinalIgnoreCase)) return;
 
+            // Also ignore a repeat of the code we are already connecting to. The
+            // creator announces on a heartbeat, so a second announcement during
+            // the join is the normal case, not an exception — acting on it would
+            // tear down the in-flight connect and start again, indefinitely.
+            if (string.Equals(_pendingCode, announcement.Code, StringComparison.OrdinalIgnoreCase) &&
+                (_state == SessionState.Joining || _state == SessionState.Reconnecting))
+            {
+                return;
+            }
+
             if (_isCreator)
             {
                 // We created a room and just lost the tiebreak. PLAN.md §5.1 says
@@ -703,6 +735,12 @@ namespace ValheimRelay.Core.Session
             }
 
             _log.Info("adopting session code " + announcement.Code);
+
+            // Claim it now rather than at welcome, so further announcements of
+            // the same code are Ignored by the arbiter instead of re-adopted. If
+            // the join fails with 4004 the code is marked dead, which clears it.
+            _arbiter.SetCurrent(announcement.Code, announcement.Epoch);
+
             CloseTransport(1000, "migrating to " + announcement.Code);
             _outbound.Clear();
             BeginConnect(announcement.Code, null, announcement.Epoch, SessionState.Joining);
@@ -727,6 +765,12 @@ namespace ValheimRelay.Core.Session
             _pendingCode = null;
             _pendingToken = null;
             _lastDiscoveryAskAt = TimeSpan.Zero;
+
+            // Discovering means we hold no session. Leaving the arbiter pointed
+            // at the code we just lost would have it Defend that code against a
+            // peer announcing the live one, and this client would never rejoin.
+            _arbiter.ClearCurrent();
+
             SetState(SessionState.Discovering);
             if (_gameChannel.IsReady) _gameChannel.RequestCode();
             _lastDiscoveryAskAt = _clock.Elapsed;

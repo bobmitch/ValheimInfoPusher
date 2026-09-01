@@ -30,12 +30,21 @@ namespace ValheimRelay.Core.Session
                 url = "wss://" + url;
             }
 
-            var trimmed = url.TrimEnd('/');
-            if (trimmed.Length == 0) return fallback;
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var parsed)) return fallback;
+            if (string.IsNullOrEmpty(parsed.Host)) return fallback;
 
-            if (!EndsWith(trimmed, PathSuffix)) trimmed += PathSuffix;
+            // Operate on the path, not on the whole string: appending to the end
+            // of "wss://host/ws?tenant=abc" would produce a path inside the query.
+            var builder = new UriBuilder(parsed);
+            var path = builder.Path.TrimEnd('/');
+            if (!EndsWith(path, PathSuffix)) path += PathSuffix;
+            builder.Path = path;
 
-            return Uri.TryCreate(trimmed, UriKind.Absolute, out _) ? trimmed : fallback;
+            // UriBuilder adds a default port; keep the URL as the player wrote it.
+            var result = builder.Uri.GetComponents(
+                UriComponents.SchemeAndServer | UriComponents.PathAndQuery, UriFormat.UriEscaped);
+
+            return string.IsNullOrEmpty(result) ? fallback : result;
         }
 
         /// <summary>True for a URL that carries telemetry in the clear.</summary>

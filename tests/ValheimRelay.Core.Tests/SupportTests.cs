@@ -503,7 +503,8 @@ namespace ValheimRelay.Core.Tests
         [InlineData("wss://relay.example", "wss://relay.example/ws")]
         [InlineData("wss://relay.example/", "wss://relay.example/ws")]
         [InlineData("  wss://relay.example/ws  ", "wss://relay.example/ws")]
-        [InlineData("WSS://RELAY.EXAMPLE/WS", "WSS://RELAY.EXAMPLE/WS")]
+        // Scheme and host normalise to lower case; the path does not, because paths are case-sensitive.
+        [InlineData("WSS://RELAY.EXAMPLE/WS", "wss://relay.example/WS")]
         public void AbsorbsThePasteMistakesPlayersMake(string input, string expected)
         {
             Assert.Equal(expected, RelayUrl.Normalise(input));

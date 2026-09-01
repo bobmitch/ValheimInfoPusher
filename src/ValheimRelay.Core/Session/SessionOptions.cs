@@ -64,7 +64,18 @@ namespace ValheimRelay.Core.Session
         /// <summary>Whether this client streams its own position (§7 <c>ShareMyPosition</c>).</summary>
         public bool SharePosition { get; set; } = true;
 
-        public int OutboundReliableCapacity { get; set; } = 64;
+        /// <summary>
+        /// How long to wait for <c>welcome</c> after the socket opens before
+        /// giving up and retrying.
+        /// </summary>
+        public TimeSpan ConnectTimeout { get; set; } = TimeSpan.FromSeconds(20);
+
+        /// <summary>
+        /// Must comfortably exceed a full state replay — one <c>hello</c> plus up
+        /// to <see cref="MarkerStore.MaxOwnedMarkers"/> markers (§12.4) — or the
+        /// replay drops its own tail and a reloaded map silently loses markers.
+        /// </summary>
+        public int OutboundReliableCapacity { get; set; } = MarkerStore.MaxOwnedMarkers + 32;
 
         public SessionOptions Clone() => (SessionOptions)MemberwiseClone();
 
@@ -76,7 +87,10 @@ namespace ValheimRelay.Core.Session
             if (RequestStateCooldown < TimeSpan.FromSeconds(1)) RequestStateCooldown = TimeSpan.FromSeconds(1);
             if (HelloInterval < TimeSpan.FromSeconds(10)) HelloInterval = TimeSpan.FromSeconds(10);
             if (PositionKeepalive < PositionInterval) PositionKeepalive = PositionInterval;
-            if (OutboundReliableCapacity < 8) OutboundReliableCapacity = 8;
+            if (ConnectTimeout < TimeSpan.FromSeconds(5)) ConnectTimeout = TimeSpan.FromSeconds(5);
+            // A replay is hello + every owned marker in one go.
+            var replayFloor = MarkerStore.MaxOwnedMarkers + 8;
+            if (OutboundReliableCapacity < replayFloor) OutboundReliableCapacity = replayFloor;
         }
     }
 

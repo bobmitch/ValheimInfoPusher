@@ -825,6 +825,49 @@ add/remove pair into a resurrection.
   bundled library and no package reference. M0(a) is narrowed to "does Valheim's
   Mono runtime carry a working one, TLS included".
 
+### 12.13 Defects found in review, and fixed
+
+A review pass over `Core` after M1 found nine. Recording them because most are
+not visible from the code they affect, and three would have shipped as bugs a
+player would report but nobody could reproduce.
+
+- **A refused frame was re-sent out of order.** The drain loop dequeued, and on
+  a transport refusal re-enqueued — which appends to the *tail*. A marker
+  add/remove pair refused mid-drain came back as remove-then-add, leaving an
+  undeletable phantom marker on every map. A refused *position* was worse: it
+  had no lane to go back to and was promoted into the reliable queue, inverting
+  the §4.2 drop policy. Replaced with peek-send-commit, so a refused frame never
+  moves at all.
+- **Shutdown swallowed the next run's first disconnect.** `Stop()` counted a
+  deliberate close that the handler never consumed, and the credit survived into
+  the next session: the first genuine 1006 was ignored and the session sat
+  `Active` behind a dead socket for ever.
+- **A token rejection permanently split the group.** Entering discovery did not
+  clear the arbiter, so it kept *defending* the code it had just been thrown off,
+  and ignored every announcement of the live one.
+- **A full marker replay overflowed its own queue.** `hello` plus 64 markers is
+  65 frames against a capacity of 64, so the replay dropped its own tail — the
+  exact failure §12.4 was written to prevent. The capacity is now derived from
+  `MarkerStore.MaxOwnedMarkers` rather than being a number that happened to look
+  large enough.
+- **A socket that opened but never sent `welcome` hung for ever.** No deadline on
+  `Creating`/`Joining`: no retry, no notice, nothing logged. A wedged proxy or a
+  relay mid-restart would do this.
+- **The creator's heartbeat restarted joins in progress.** A second announcement
+  of the code being joined tore down the in-flight connect and started again —
+  and the creator announces every 30 s, so this was the normal case, not an edge.
+- **A corrupt identity salt threw on every world load.** `Salt` returned what it
+  read without validating; `Derive` throws on a bad one, and nothing caught it.
+  Now validated and regenerated, and the plugin checks rather than assumes.
+- **`/ws` was appended after the query string**, turning
+  `wss://host/ws?tenant=abc` into `…?tenant=abc/ws`, which disagreed with the
+  transport's own query builder.
+- **Inbound fragment reassembly was unbounded.** A peer that never sets
+  `EndOfMessage` grew the buffer indefinitely; it is now capped and the
+  connection dropped.
+
+Each has a test in `RegressionTests` named for the failure it prevents.
+
 ### 12.12 Still open, and needing a decision
 
 1. **§11.2, the default `RelayUrl`.** Unchanged and blocking a release: shipping

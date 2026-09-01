@@ -214,6 +214,19 @@ namespace ValheimRelay.Core.Session
                 if (result.MessageType != WebSocketMessageType.Text) continue;
 
                 assembled.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+
+                // The relay caps frames at MAX_MESSAGE_BYTES, so a message that
+                // keeps fragmenting past it is not the relay. Refuse it rather
+                // than growing a buffer for as long as the peer keeps sending.
+                if (assembled.Length > Protocol.FrameCodec.MaxFrameBytes * 2)
+                {
+                    _log.Warn("inbound frame exceeded the size cap; dropping the connection");
+                    await socket.CloseOutputAsync(
+                        WebSocketCloseStatus.MessageTooBig, "frame too large", CancellationToken.None)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
                 if (!result.EndOfMessage) continue;
 
                 var text = assembled.ToString();
