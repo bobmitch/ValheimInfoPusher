@@ -3,6 +3,12 @@ using BepInEx.Configuration;
 using UnityEngine;
 using ValheimRelay.Core.Session;
 
+// The ConfigEntry property below is also called RelayUrl, and a member name
+// beats a type name in lookup, so inside this class the bare name is the
+// property. That is what the two uses of this alias need to get around; the
+// property keeps its name because it is what appears in the config file.
+using CoreRelayUrl = ValheimRelay.Core.Session.RelayUrl;
+
 namespace ValheimRelay.Plugin
 {
     /// <summary>
@@ -49,7 +55,7 @@ namespace ValheimRelay.Plugin
         // §11.2, settled: the mod ships pointed at the hosted relay, which is
         // what keeps §2's "nothing to edit" promise. The address lives in Core
         // beside the normalisation rules so it is covered by tests.
-        public const string DefaultRelayUrl = RelayUrl.Default;
+        public const string DefaultRelayUrl = CoreRelayUrl.Default;
 
         // §11.3, settled. Shipped alongside the relay default: one without the
         // other leaves the player holding a bare code with nowhere to put it.
@@ -82,7 +88,7 @@ namespace ValheimRelay.Plugin
         /// Accepts what a player is likely to paste. The rules live in Core's
         /// <see cref="RelayUrl"/> so they can be tested without the game.
         /// </summary>
-        public static string NormaliseRelayUrl(string raw) => RelayUrl.Normalise(raw, DefaultRelayUrl);
+        public static string NormaliseRelayUrl(string raw) => CoreRelayUrl.Normalise(raw, DefaultRelayUrl);
 
         /// <summary>
         /// The one copyable thing to hand a player: a link if a map is
