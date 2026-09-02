@@ -34,9 +34,16 @@ a vanilla server.
 session move, live, for as long as the session lasts. Treat it like a share link,
 not like a room name. Don't post it anywhere public unless you mean to.
 
-The copy button gives you `https://bobmitch.com/valheim#YOURCODE`. The part after
-the `#` is never sent to the web server, so your code stays out of its logs — but
-it is still in the link, so anyone you send the link to can watch your session.
+The copy button gives you `https://bobmitch.com/valheim?seed=YOURSEED#YOURCODE`.
+The part after the `#` is never sent to the web server, so your code stays out of
+its logs — but it is still in the link, so anyone you send the link to can watch
+your session.
+
+Your world's seed is in the link too, before the `#`, which does mean the map's
+server sees it. That is on purpose: it is what lets the map draw your world's
+terrain before it has connected to anything. A seed names a world, not a player —
+it is the same string anyone can read on your world-select screen, it grants no
+access to your session, and it is not tied to your account.
 
 What the mod sends: your display name, your position, your heading, your biome,
 and (if `ShareHealth` is on) your health. What it does not send: your Steam ID or

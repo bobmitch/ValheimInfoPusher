@@ -164,7 +164,7 @@ namespace ValheimRelay.Plugin
                         // what the Crockford alphabet exists for (§1.1) — so the
                         // line carries both.
                         _bridge.LocalMessage(_plugin.Settings.HasMapLink
-                            ? notice.Code + "  ·  " + _plugin.Settings.BuildShareText(notice.Code) + "  (F9 to copy)"
+                            ? notice.Code + "  ·  " + _plugin.Settings.BuildShareText(notice.Code, WorldSeed) + "  (F9 to copy)"
                             : "map code " + notice.Code + "  (F9 for the panel)");
                     }
                     break;
@@ -226,10 +226,18 @@ namespace ValheimRelay.Plugin
         {
             var code = Code;
             if (code == null) return;
-            GUIUtility.systemCopyBuffer = _plugin.Settings.BuildShareText(code);
+            GUIUtility.systemCopyBuffer = _plugin.Settings.BuildShareText(code, WorldSeed);
         }
 
         public void RetryAfterRoomFull() => _session?.Retry();
+
+        /// <summary>
+        /// The current world's seed for the share link, read at share time
+        /// rather than cached: a player can leave one world and load another
+        /// without this component restarting, and a stale seed would hand them a
+        /// link that renders the wrong terrain.
+        /// </summary>
+        private string? WorldSeed => _bridge.ReadWorld().Seed;
 
         private void OnDestroy()
         {

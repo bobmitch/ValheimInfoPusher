@@ -652,6 +652,65 @@ namespace ValheimRelay.Core.Tests
         }
 
         [Fact]
+        public void TheSeedRidesInTheQueryWhereTheMapsServerCanReadIt()
+        {
+            // The opposite placement to the code, and deliberately: the seed is
+            // not a credential, and the map needs it server-side to generate
+            // terrain before the socket opens.
+            Assert.Equal("https://bobmitch.com/valheim?seed=cVSqYlpMn0#" + Code,
+                MapLink.Build("https://bobmitch.com/valheim", Code, "cVSqYlpMn0"));
+        }
+
+        [Fact]
+        public void TheSeedJoinsAQueryTheMapUrlAlreadyHadRatherThanReplacingIt()
+        {
+            Assert.Equal("https://map.example/v2?theme=dark&seed=abc#" + Code,
+                MapLink.Build("https://map.example/v2?theme=dark", Code, "abc"));
+        }
+
+        [Fact]
+        public void OnARootMapTheSlashStaysOnThePathAheadOfTheSeed()
+        {
+            // "https://map.example?seed=x/#CODE" would put the path separator
+            // inside the query, which is the bug the naive concatenation makes.
+            Assert.Equal("https://map.example/?seed=abc#" + Code,
+                MapLink.Build("https://map.example", Code, "abc"));
+        }
+
+        [Theory]
+        [InlineData(null)]
+        [InlineData("")]
+        public void NoSeedLeavesTheLinkExactlyAsItWasBefore(string? seed)
+        {
+            // A world whose seed cannot be read must not produce "?seed=".
+            Assert.Equal(MapLink.Build(MapLink.Default, Code),
+                MapLink.Build(MapLink.Default, Code, seed));
+        }
+
+        [Fact]
+        public void ASeedWithAwkwardCharactersIsEscaped()
+        {
+            // Valheim takes whatever the player typed as a seed name, spaces
+            // and ampersands included, and an unescaped one would split the
+            // query or truncate the fragment.
+            var link = MapLink.Build("https://map.example/m", Code, "a b&c=d");
+            Assert.Equal("https://map.example/m?seed=a%20b%26c%3Dd#" + Code, link);
+            Assert.Equal("a b&c=d", Uri.UnescapeDataString(new Uri(link).Query.Substring("?seed=".Length)));
+        }
+
+        [Fact]
+        public void EvenWithASeedTheCodeStaysOutOfTheQuery()
+        {
+            // §8 again: adding a query to the link must not drag the credential
+            // into it.
+            var uri = new Uri(MapLink.Build(MapLink.Default, Code, "cVSqYlpMn0"));
+
+            Assert.Equal("#" + Code, uri.Fragment);
+            Assert.DoesNotContain(Code, uri.Query);
+            Assert.DoesNotContain(Code, uri.AbsolutePath);
+        }
+
+        [Fact]
         public void TheCodeGoesInTheFragmentSoItNeverReachesTheMapsServer()
         {
             // §8: the code is the credential. A fragment is the only part of a

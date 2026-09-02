@@ -95,7 +95,7 @@ namespace ValheimRelay.Plugin
         /// configured, the bare code if not. The rules live in Core's
         /// <see cref="MapLink"/> so they can be tested without the game.
         /// </summary>
-        public string BuildShareText(string code) => MapLink.Build(MapUrl.Value, code);
+        public string BuildShareText(string code, string? seed = null) => MapLink.Build(MapUrl.Value, code, seed);
 
         /// <summary>True when there is a map to link to, so the UI can say "link" rather than "code".</summary>
         public bool HasMapLink => MapLink.Normalise(MapUrl.Value).Length > 0;
