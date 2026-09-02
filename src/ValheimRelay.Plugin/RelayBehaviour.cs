@@ -105,6 +105,10 @@ namespace ValheimRelay.Plugin
 
         private void Update()
         {
+            // Ahead of the session check: a ping pin that outlived its session
+            // would otherwise sit on the map until the world unloaded.
+            _bridge.ExpirePings();
+
             if (_session == null) return;
 
             if (Input.GetKeyDown(_plugin.Settings.ToggleKey.Value))
@@ -218,6 +222,7 @@ namespace ValheimRelay.Plugin
         {
             foreach (var pin in _pins.Values) _bridge.RemovePin(pin);
             _pins.Clear();
+            _bridge.ClearPings();
         }
 
         // ------------------------------------------------------------ panel API
