@@ -302,6 +302,10 @@ namespace ValheimRelay.Plugin
 
         private MethodInfo? _chatPing;
         private bool _chatPingResolved;
+        private MethodInfo? _groundHeight;
+        private MethodInfo? _groundHeightDirect;
+        private MethodInfo? _generatedHeight;
+        private bool _heightResolved;
         private MethodInfo? _addPing;
         private bool _addPingResolved;
         private bool _pingApiDescribed;
@@ -346,7 +350,10 @@ namespace ValheimRelay.Plugin
 
                 DescribePingApi();
 
-                var position = new Vector3((float)x, 0f, (float)z);
+                // A ping is a place in the world, not just a spot on the map:
+                // the world text and the sound both sit at this point, so a y of
+                // zero puts them at sea level, under the ground the ping is on.
+                var position = new Vector3((float)x, GroundHeight((float)x, (float)z), (float)z);
                 var name = string.IsNullOrEmpty(who) ? "Ping" : who!;
                 var style = ReadPingStyle();
 
@@ -477,6 +484,158 @@ namespace ValheimRelay.Plugin
             LocalMessage(name + " pinged "
                 + Mathf.RoundToInt(position.x).ToString(CultureInfo.InvariantCulture) + ", "
                 + Mathf.RoundToInt(position.z).ToString(CultureInfo.InvariantCulture));
+        }
+
+        /// <summary>
+        /// The height of the land at (x, z).
+        /// <para>
+        /// Two sources, because neither covers the whole map. Where the terrain
+        /// is loaded the game can measure it, which is the only way to see
+        /// ground a player has raised or dug since the world was generated.
+        /// Everywhere else — and that is most of the map, most of the time —
+        /// the generator knows what the terrain would be without it having to
+        /// exist yet. Failing both, zero: a ping at sea level is where this
+        /// started, and is still better than no ping.
+        /// </para>
+        /// </summary>
+        private float GroundHeight(float x, float z)
+        {
+            ResolveHeight();
+
+            try
+            {
+                // Probe from far above the world. The measured path is a
+                // downward raycast on the builds that have it, and one that
+                // starts underground hits nothing on the way down.
+                var probe = new Vector3(x, 5000f, z);
+                var zones = ZoneSystem.instance;
+
+                if (zones != null && _groundHeight != null)
+                {
+                    var args = Fill(_groundHeight, probe);
+                    if (_groundHeight.Invoke(zones, args) is bool found && found && args[1] is float measured)
+                    {
+                        return measured;
+                    }
+                }
+
+                if (zones != null && _groundHeightDirect != null
+                    && _groundHeightDirect.Invoke(zones, Fill(_groundHeightDirect, probe)) is float direct
+                    && Mathf.Abs(direct) > 0.001f)
+                {
+                    // Exactly zero is what these return when they found nothing,
+                    // and is not a height any real terrain sits at.
+                    return direct;
+                }
+
+                var generator = WorldGenerator.instance;
+                if (generator != null && _generatedHeight != null
+                    && _generatedHeight.Invoke(generator, Fill(_generatedHeight, x, z)) is float generated
+                    && !float.IsNaN(generated))
+                {
+                    return generated;
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Debug("could not read the ground height: " + ex.Message);
+            }
+
+            return 0f;
+        }
+
+        private void ResolveHeight()
+        {
+            if (_heightResolved) return;
+            _heightResolved = true;
+
+            try
+            {
+                // Ground before solid: the ping is meant to land on the terrain,
+                // not on the roof of whatever has been built over it.
+                foreach (var name in new[] { "GetGroundHeight", "GetSolidHeight" })
+                {
+                    foreach (var candidate in typeof(ZoneSystem).GetMethods(AnyInstanceMethod))
+                    {
+                        if (!string.Equals(candidate.Name, name, StringComparison.Ordinal)) continue;
+
+                        var parameters = candidate.GetParameters();
+                        if (parameters.Length < 1 || parameters[0].ParameterType != typeof(Vector3)) continue;
+
+                        if (candidate.ReturnType == typeof(bool)
+                            && parameters.Length == 2
+                            && parameters[1].IsOut
+                            && parameters[1].ParameterType.GetElementType() == typeof(float))
+                        {
+                            if (_groundHeight == null) _groundHeight = candidate;
+                        }
+                        else if (candidate.ReturnType == typeof(float) && parameters.Length == 1)
+                        {
+                            if (_groundHeightDirect == null) _groundHeightDirect = candidate;
+                        }
+                    }
+
+                    if (_groundHeight != null || _groundHeightDirect != null) break;
+                }
+
+                foreach (var candidate in typeof(WorldGenerator).GetMethods(AnyInstanceMethod))
+                {
+                    if (!string.Equals(candidate.Name, "GetHeight", StringComparison.Ordinal)) continue;
+                    if (candidate.ReturnType != typeof(float)) continue;
+
+                    var parameters = candidate.GetParameters();
+                    if (parameters.Length < 2) continue;
+                    if (parameters[0].ParameterType != typeof(float) || parameters[1].ParameterType != typeof(float)) continue;
+
+                    // Some builds hand back a biome mask alongside the height.
+                    var usable = true;
+                    for (var i = 2; i < parameters.Length; i++)
+                    {
+                        if (parameters[i].IsOut || parameters[i].IsOptional) continue;
+                        usable = false;
+                        break;
+                    }
+                    if (!usable) continue;
+
+                    _generatedHeight = candidate;
+                    break;
+                }
+
+                if (_groundHeight == null && _groundHeightDirect == null && _generatedHeight == null)
+                {
+                    _log.Info("no ground-height lookup was found on this build, so pings will sit at sea level.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Warn("could not look up the ground-height API: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// An argument array with the values that matter at the front and each
+        /// remaining parameter — <c>out</c> and optional alike — left at its
+        /// type's default, which is what <see cref="MethodBase.Invoke"/> wants.
+        /// </summary>
+        private static object[] Fill(MethodInfo method, params object[] leading)
+        {
+            var parameters = method.GetParameters();
+            var args = new object[parameters.Length];
+
+            for (var i = 0; i < parameters.Length; i++)
+            {
+                if (i < leading.Length)
+                {
+                    args[i] = leading[i];
+                    continue;
+                }
+
+                var type = parameters[i].ParameterType;
+                if (type.IsByRef) type = type.GetElementType()!;
+                args[i] = (type.IsValueType ? Activator.CreateInstance(type) : null)!;
+            }
+
+            return args;
         }
 
         /// <summary>
@@ -711,6 +870,8 @@ namespace ValheimRelay.Plugin
                 var report = new StringBuilder("ping API on this game build:");
                 AppendMethods(report, typeof(Chat), "OnNewChatMessage", "AddInworldText", "SendPing", "RPC_ChatMessage");
                 AppendMethods(report, typeof(Minimap), "AddPing", "ShowPointOnMap");
+                AppendMethods(report, typeof(ZoneSystem), "GetGroundHeight", "GetSolidHeight");
+                AppendMethods(report, typeof(WorldGenerator), "GetHeight");
                 AppendEffectFields(report, typeof(Chat));
                 AppendEffectFields(report, typeof(Minimap));
                 _log.Info(report.ToString());
