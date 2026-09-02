@@ -62,6 +62,19 @@
     <Reference Include="UnityEngine.CoreModule" HintPath="$(ValheimManaged)/UnityEngine.CoreModule.dll" Private="false" />
     <Reference Include="UnityEngine.IMGUIModule" HintPath="$(ValheimManaged)/UnityEngine.IMGUIModule.dll" Private="false" />
     <Reference Include="UnityEngine.InputLegacyModule" HintPath="$(ValheimManaged)/UnityEngine.InputLegacyModule.dll" Private="false" />
+
+    <!--
+      FontStyle, for the panel's code label, lives here rather than in
+      CoreModule with the rest of the GUI types.
+    -->
+    <Reference Include="UnityEngine.TextRenderingModule" HintPath="$(ValheimManaged)/UnityEngine.TextRenderingModule.dll" Private="false" />
+
+    <!--
+      Valheim's platform abstraction. Nothing here names PlatformUserID
+      directly, but Minimap.AddPin has an overload that does, and overload
+      resolution has to be able to load the type to reject that candidate.
+    -->
+    <Reference Include="Splatform" HintPath="$(ValheimManaged)/Splatform.dll" Private="false" />
   </ItemGroup>
 
   <ItemGroup>

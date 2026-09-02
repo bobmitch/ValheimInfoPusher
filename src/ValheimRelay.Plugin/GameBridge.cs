@@ -193,7 +193,10 @@ namespace ValheimRelay.Plugin
             {
                 try
                 {
-                    return ZNet.instance?.GetUID() ?? 0;
+                    // GetUID is static in this build, but it only means
+                    // anything once ZNet exists, so the instance check
+                    // stays as a guard rather than as the receiver.
+                    return ZNet.instance == null ? 0 : ZNet.GetUID();
                 }
                 catch (Exception)
                 {

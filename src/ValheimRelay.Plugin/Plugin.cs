@@ -6,6 +6,12 @@ using HarmonyLib;
 using UnityEngine;
 using ValheimRelay.Core.Session;
 
+// BepInEx.Logging and Core both define a LogLevel and this file needs types from
+// both, so the unqualified name is ambiguous. Aliased rather than fully
+// qualified because BepInExLog exists precisely to map one enum onto the other:
+// every mention of the Core one below is the load-bearing half of that mapping.
+using CoreLogLevel = ValheimRelay.Core.Session.LogLevel;
+
 namespace ValheimRelay.Plugin
 {
     [BepInPlugin(PluginId, PluginName, PluginVersion)]
@@ -86,17 +92,17 @@ namespace ValheimRelay.Plugin
             _source = source ?? throw new ArgumentNullException(nameof(source));
         }
 
-        public void Log(LogLevel level, string message)
+        public void Log(CoreLogLevel level, string message)
         {
             switch (level)
             {
-                case LogLevel.Debug:
+                case CoreLogLevel.Debug:
                     _source.LogDebug(message);
                     break;
-                case LogLevel.Warning:
+                case CoreLogLevel.Warning:
                     _source.LogWarning(message);
                     break;
-                case LogLevel.Error:
+                case CoreLogLevel.Error:
                     _source.LogError(message);
                     break;
                 default:

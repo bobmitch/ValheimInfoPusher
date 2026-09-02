@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using HarmonyLib;
+using ValheimRelay.Core.Session;
 
 namespace ValheimRelay.Plugin.Patches
 {
