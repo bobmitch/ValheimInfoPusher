@@ -41,7 +41,7 @@ namespace ValheimRelay.Plugin
             _plugin = ValheimRelayPlugin.Instance
                 ?? throw new InvalidOperationException("RelayBehaviour created without a plugin");
 
-            _bridge = new GameBridge(_plugin.Log);
+            _bridge = new GameBridge(_plugin.Log, () => _plugin.Settings.PingStyle.Value);
             _channel = new GameCodeChannel(_plugin.Log, () => _plugin.Settings.AnnounceInChat.Value);
             _transport = new ClientWebSocketTransport(_plugin.Log);
             _reclaim = new ReclaimStore(new FileReclaimStorage(_plugin.SessionStorePath, _plugin.Log), _plugin.Log);
