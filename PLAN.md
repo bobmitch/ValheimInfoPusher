@@ -922,12 +922,13 @@ committed. `git ls-files` on a new directory is, and it costs nothing.
      old versions. If it is ever likely to move, it wants a stable hostname in
      front of it rather than the deployment's own.
 
-   It has **not** been verified from a machine that can reach it: the sandbox
-   this was implemented in blocks the host at the egress proxy, so the first
-   real handshake against it will be someone's game or a local `stubmap` run.
-   That is the one thing left to confirm before release, and it is a five-second
-   check: `go run ./cmd/stubmap -relay wss://valheimrelay.bobmitch.com/ws -code
-   <any>` should answer with close code 4004, not a connection error.
+   ~~It has **not** been verified from a machine that can reach it.~~ **Now
+   verified.** The handshake was checked against the host directly — create
+   returns a welcome, an unknown code closes 4004 as §1.4 requires — and then a
+   real game session started against it through the shipped default, which is
+   the check that counts. This is no longer the thing left to confirm before
+   release; what remains in-game is the list the README keeps, headed by whether
+   a Mono-side session outlives the ping interval.
 2. **§11.1, the dedicated server.** Needs M0(b). The mod degrades automatically
    either way, so this is a documentation and support-burden question rather than
    a design one now.
