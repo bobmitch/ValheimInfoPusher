@@ -484,6 +484,12 @@ back to the chat channel automatically.
 - **A hotkey-toggled panel** (default F9, rebindable) showing: the code, a
   **Copy** button (`GUIUtility.systemCopyBuffer`), connection state, player count
   and map count. This is the answer to "I closed the chat and lost the code".
+  Opening the panel copies the share text itself, so the button is the recovery
+  path rather than a required step, and the panel draws the link as a **QR code**
+  (`ValheimRelay.Core.Qr`, generated in-process — §8's credential never reaches a
+  QR service) so a phone can open the map without typing. The QR is drawn only
+  when a `MapUrl` is configured: a symbol carrying a bare code scans to eight
+  characters with nowhere to put them.
 - **A small always-visible indicator** while the session is live. Players should
   never be unsure whether their position is being broadcast.
 - **Notify on state changes** that matter: disconnected, reconnecting, code

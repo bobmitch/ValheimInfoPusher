@@ -168,7 +168,8 @@ namespace ValheimRelay.Plugin
                         // what the Crockford alphabet exists for (§1.1) — so the
                         // line carries both.
                         _bridge.LocalMessage(_plugin.Settings.HasMapLink
-                            ? notice.Code + "  ·  " + _plugin.Settings.BuildShareText(notice.Code, WorldSeed) + "  (F9 to copy)"
+                            ? notice.Code + "  ·  " + _plugin.Settings.BuildShareText(notice.Code, WorldSeed)
+                                + "  (F9 copies it and shows a QR)"
                             : "map code " + notice.Code + "  (F9 for the panel)");
                     }
                     break;
@@ -227,11 +228,19 @@ namespace ValheimRelay.Plugin
 
         // ------------------------------------------------------------ panel API
 
-        public void CopyShareTextToClipboard()
+        /// <summary>
+        /// The one string the mod hands a player: the map link when a map is
+        /// configured, the bare code when one is not. The panel copies this and
+        /// draws it as a QR, so the clipboard and the square can never end up
+        /// pointing at different things.
+        /// </summary>
+        public string? ShareText
         {
-            var code = Code;
-            if (code == null) return;
-            GUIUtility.systemCopyBuffer = _plugin.Settings.BuildShareText(code, WorldSeed);
+            get
+            {
+                var code = Code;
+                return code == null ? null : _plugin.Settings.BuildShareText(code, WorldSeed);
+            }
         }
 
         public void RetryAfterRoomFull() => _session?.Retry();
@@ -248,6 +257,7 @@ namespace ValheimRelay.Plugin
         {
             _session?.Dispose();
             _transport.Dispose();
+            _panel.Release();
         }
     }
 
