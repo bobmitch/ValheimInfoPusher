@@ -8,16 +8,17 @@ paste it into the map, and everyone shows up moving in real time.
 - Install the mod, load a world, and a code appears in chat and in the panel.
 - **Other modded players in that world join automatically.** Nobody types
   anything — the code travels over the game's own network.
-- Press **F9**. The map link is already on your clipboard — paste it into a
+- Press **Shift+F8**. The map link is already on your clipboard — paste it into a
   browser. Or point your phone at the QR code in the panel, which opens the same
   link without typing anything. Or read the code aloud; it is deliberately made
   of characters that do not sound alike over voice chat.
 - A crash, a restart, or an alt-tab resumes the same session and the same code.
 
-Press **F9** for the panel: the code, connection state, player count, a copy
+Press **Shift+F8** for the panel: the code, connection state, player count, a copy
 button, and a QR code of the map link. Opening it copies the link for you, so
 the button is there for when you have copied something else since. The key is
-rebindable in the config.
+rebindable in the config, and the Shift requirement can be turned off there too.
+F8 with Shift was picked because neither half is a stock Valheim bind.
 
 The QR is generated inside the game — the code never goes to a QR service, for
 the same reason it rides in the link's `#fragment`: anyone holding it can watch
@@ -85,7 +86,8 @@ Everything is defaulted; a fresh install needs no edits.
 | `ShareHealth` | `true` | Include health |
 | `AcceptMapMarkers` | `true` | Let the map place pins on your minimap |
 | `PositionInterval` | `1.0` | Seconds between updates, minimum 0.5 |
-| `ToggleKey` | `F9` | Shows the panel |
+| `ToggleKey` | `F8` | Shows the panel, held with Shift |
+| `ToggleRequiresShift` | `true` | Require Shift with `ToggleKey`. Off means a bare keypress |
 
 ## Troubleshooting
 

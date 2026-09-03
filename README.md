@@ -26,7 +26,7 @@ The relay at `wss://valheimrelay.bobmitch.com/ws` **is up**, and the handshake
 contract is confirmed against it rather than only against the fixture: `role=mod`
 with no code creates a session and returns a welcome, and an unknown `code=`
 closes 4004 as §1.4 requires. So a fresh install needs no config edits (§11.2),
-and F9 copies a link that will work once there is something at the other end
+and Shift+F8 copies a link that will work once there is something at the other end
 (§11.3).
 
 ### What running it in Valheim has now shown
@@ -43,7 +43,7 @@ log is any "stayed dormant" line or the `Chat.OnNewChatMessage was not found`
 warning, so the chat signature §4.3 warns is version-volatile **matches this
 game build**.
 
-The **F9 panel and its QR are now confirmed in game.** The panel opens over the
+The **panel and its QR are now confirmed in game.** The panel opens over the
 minimap and draws the symbol, and a phone reads it off the screen: the whole §7
 path — `QrCode.Encode`, the `QrTexture` pixels, their orientation, and 160px
 being big enough to scan at arm's length — holds on the real thing and not only

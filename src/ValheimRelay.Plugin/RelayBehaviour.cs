@@ -111,7 +111,7 @@ namespace ValheimRelay.Plugin
 
             if (_session == null) return;
 
-            if (Input.GetKeyDown(_plugin.Settings.ToggleKey.Value))
+            if (Input.GetKeyDown(_plugin.Settings.ToggleKey.Value) && ToggleModifierHeld())
             {
                 _panel.Toggle();
             }
@@ -132,6 +132,17 @@ namespace ValheimRelay.Plugin
 
             SubmitPosition();
             _session.Tick();
+        }
+
+        /// <summary>
+        /// True unless the config asks for Shift and neither Shift key is down.
+        /// The default bind is Shift+F8: F9 is a stock game bind, F8 is not, and
+        /// the modifier keeps the panel clear of whatever else is bound to F8.
+        /// </summary>
+        private bool ToggleModifierHeld()
+        {
+            if (!_plugin.Settings.ToggleRequiresShift.Value) return true;
+            return Input.GetKey(KeyCode.LeftShift) || Input.GetKey(KeyCode.RightShift);
         }
 
         private void SubmitPosition()
@@ -169,8 +180,8 @@ namespace ValheimRelay.Plugin
                         // line carries both.
                         _bridge.LocalMessage(_plugin.Settings.HasMapLink
                             ? notice.Code + "  ·  " + _plugin.Settings.BuildShareText(notice.Code, WorldSeed)
-                                + "  (F9 copies it and shows a QR)"
-                            : "map code " + notice.Code + "  (F9 for the panel)");
+                                + "  (Shift+F8 copies it and shows a QR)"
+                            : "map code " + notice.Code + "  (Shift+F8 for the panel)");
                     }
                     break;
 

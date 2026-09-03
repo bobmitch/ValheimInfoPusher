@@ -66,8 +66,14 @@ namespace ValheimRelay.Plugin
                     "Seconds between position updates. Clamped to at least 0.5.",
                     new AcceptableValueRange<float>(0.5f, 10f)));
 
-            ToggleKey = file.Bind("UI", "ToggleKey", KeyCode.F9,
-                "Shows and hides the relay panel.");
+            // F9 is a stock Valheim bind and a popular one among other mods, so
+            // the panel sits on F8 plus Shift: an unbound key made two-handed,
+            // which is about as far out of the way as a hotkey gets.
+            ToggleKey = file.Bind("UI", "ToggleKey", KeyCode.F8,
+                "Shows and hides the relay panel. Held together with Shift unless ToggleRequiresShift is off.");
+
+            ToggleRequiresShift = file.Bind("UI", "ToggleRequiresShift", true,
+                "Require Shift to be held with ToggleKey. Turn this off for a bare keypress.");
 
             PingStyle = file.Bind("UI", "PingStyle", ValheimRelay.Plugin.PingStyle.Auto,
                 "How a ping from the web map is shown. Auto hands it to the game's own ping code, "
@@ -94,6 +100,7 @@ namespace ValheimRelay.Plugin
         public ConfigEntry<bool> AcceptMapMarkers { get; }
         public ConfigEntry<float> PositionInterval { get; }
         public ConfigEntry<KeyCode> ToggleKey { get; }
+        public ConfigEntry<bool> ToggleRequiresShift { get; }
         public ConfigEntry<PingStyle> PingStyle { get; }
 
         public SessionOptions ToSessionOptions()
