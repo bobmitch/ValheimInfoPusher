@@ -41,7 +41,7 @@ namespace ValheimRelay.Plugin
             _plugin = ValheimRelayPlugin.Instance
                 ?? throw new InvalidOperationException("RelayBehaviour created without a plugin");
 
-            _bridge = new GameBridge(_plugin.Log);
+            _bridge = new GameBridge(_plugin.Log, () => _plugin.Settings.PingStyle.Value);
             _channel = new GameCodeChannel(_plugin.Log, () => _plugin.Settings.AnnounceInChat.Value);
             _transport = new ClientWebSocketTransport(_plugin.Log);
             _reclaim = new ReclaimStore(new FileReclaimStorage(_plugin.SessionStorePath, _plugin.Log), _plugin.Log);
@@ -105,6 +105,10 @@ namespace ValheimRelay.Plugin
 
         private void Update()
         {
+            // Ahead of the session check: a ping pin that outlived its session
+            // would otherwise sit on the map until the world unloaded.
+            _bridge.ExpirePings();
+
             if (_session == null) return;
 
             if (Input.GetKeyDown(_plugin.Settings.ToggleKey.Value))
@@ -218,6 +222,7 @@ namespace ValheimRelay.Plugin
         {
             foreach (var pin in _pins.Values) _bridge.RemovePin(pin);
             _pins.Clear();
+            _bridge.ClearPings();
         }
 
         // ------------------------------------------------------------ panel API

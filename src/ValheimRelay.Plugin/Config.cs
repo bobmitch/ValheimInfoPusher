@@ -12,6 +12,24 @@ using CoreRelayUrl = ValheimRelay.Core.Session.RelayUrl;
 namespace ValheimRelay.Plugin
 {
     /// <summary>
+    /// How far down <see cref="GameBridge.ShowPing"/> is allowed to start. Each
+    /// value is a step down in fidelity, and each is still there as the one
+    /// below's fallback — so this only exists to skip a rung that a game update
+    /// has broken, without waiting for a new build of the mod.
+    /// </summary>
+    public enum PingStyle
+    {
+        /// <summary>The game's own ping: marker, sound and world text.</summary>
+        Auto = 0,
+
+        /// <summary>The minimap marker only.</summary>
+        Map = 1,
+
+        /// <summary>A short-lived pin and a chat line.</summary>
+        Pin = 2,
+    }
+
+    /// <summary>
     /// The config surface of PLAN.md §7. Every entry is defaulted so a fresh
     /// install needs no edits — that is the whole product goal in §2, and an
     /// entry that has to be filled in breaks it.
@@ -50,6 +68,12 @@ namespace ValheimRelay.Plugin
 
             ToggleKey = file.Bind("UI", "ToggleKey", KeyCode.F9,
                 "Shows and hides the relay panel.");
+
+            PingStyle = file.Bind("UI", "PingStyle", ValheimRelay.Plugin.PingStyle.Auto,
+                "How a ping from the web map is shown. Auto hands it to the game's own ping code, "
+                + "so it looks, sounds and reads exactly like a player's ping. Map draws the minimap "
+                + "marker only. Pin drops a short-lived pin and writes a chat line. Drop down a level "
+                + "if a game update breaks the one above it.");
         }
 
         // §11.2, settled: the mod ships pointed at the hosted relay, which is
@@ -70,6 +94,7 @@ namespace ValheimRelay.Plugin
         public ConfigEntry<bool> AcceptMapMarkers { get; }
         public ConfigEntry<float> PositionInterval { get; }
         public ConfigEntry<KeyCode> ToggleKey { get; }
+        public ConfigEntry<PingStyle> PingStyle { get; }
 
         public SessionOptions ToSessionOptions()
         {

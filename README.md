@@ -13,7 +13,7 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M1 — `Core` and its tests | **Done.** 226 tests, no game required |
 | M2 — single player, outbound | **Loads and starts a session in-game.** Whether position frames arrive is untested — there is no map yet to receive them |
 | M3 — multiplayer, zero typing | Code complete; patches apply on the current game build. Never run with a second player |
-| M4 — inbound markers and pings | Code complete. Not testable until a map exists to send them |
+| M4 — inbound markers and pings | Pings from a map now arrive in-game. The first one landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead. Markers still unverified |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
 | M6 — packaging | Manifest, README and changelog written; no icon yet |
 
