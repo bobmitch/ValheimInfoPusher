@@ -43,6 +43,14 @@ log is any "stayed dormant" line or the `Chat.OnNewChatMessage was not found`
 warning, so the chat signature §4.3 warns is version-volatile **matches this
 game build**.
 
+The **F9 panel and its QR are now confirmed in game.** The panel opens over the
+minimap and draws the symbol, and a phone reads it off the screen: the whole §7
+path — `QrCode.Encode`, the `QrTexture` pixels, their orientation, and 160px
+being big enough to scan at arm's length — holds on the real thing and not only
+against the goldens and a desktop scanner. What the scan opens is still nothing,
+because the map does not exist; what is settled is that the symbol carries the
+link the panel copied.
+
 Still unverified in-game, in rough order of risk: that the connection survives
 past the ping interval; that reconnect and code reclaim work across a restart
 (§5.3); that a second player joins without typing (§5.1); and every inbound
