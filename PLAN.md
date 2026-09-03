@@ -481,7 +481,7 @@ back to the chat channel automatically.
 
 - **On session start:** one chat line — `ValheimRelay: map code K7MQ2XR4` —
   local-only, plus the map URL if one is configured.
-- **A hotkey-toggled panel** (default F9, rebindable) showing: the code, a
+- **A hotkey-toggled panel** (default Shift+F8, rebindable) showing: the code, a
   **Copy** button (`GUIUtility.systemCopyBuffer`), connection state, player count
   and map count. This is the answer to "I closed the chat and lost the code".
   Opening the panel copies the share text itself, so the button is the recovery
@@ -507,7 +507,8 @@ no edits):
 | `ShareHealth`        | `true`               | Gates `hp`/`maxHp` in §3.2       |
 | `PositionInterval`   | `1.0` s              | Clamp to ≥ 0.5 s                 |
 | `AcceptMapMarkers`   | `true`               | Map → in-game pins               |
-| `ToggleKey`          | `F9`                 |                                   |
+| `ToggleKey`          | `F8`                 | Held with Shift by default        |
+| `ToggleRequiresShift`| `true`               | Off for a bare keypress           |
 | `AnnounceInChat`     | `true`               |                                   |
 
 ---
@@ -934,7 +935,7 @@ committed. `git ls-files` on a new directory is, and it costs nothing.
    a design one now.
 3. ~~**§11.3, the map URL format.**~~ **Settled:** `https://bobmitch.com/valheim`,
    with the code as a fragment — `https://bobmitch.com/valheim#K7MQ2XR4`. §2's
-   "one paste into one browser textbox" is now met: F9 copies a link.
+   "one paste into one browser textbox" is now met: the panel copies a link.
 
    Two corrections to the form §11.3 sketched:
    - It wrote `<base>/#<code>`, which is right for a map at the root of a host
