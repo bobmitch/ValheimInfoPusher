@@ -8,13 +8,22 @@ paste it into the map, and everyone shows up moving in real time.
 - Install the mod, load a world, and a code appears in chat and in the panel.
 - **Other modded players in that world join automatically.** Nobody types
   anything — the code travels over the game's own network.
-- Press F9 and hit **Copy map link** — that link opens the map on your session.
-  Or read the code aloud; it is deliberately made of characters that do not
-  sound alike over voice chat.
+- Press **F9**. The map link is already on your clipboard — paste it into a
+  browser. Or point your phone at the QR code in the panel, which opens the same
+  link without typing anything. Or read the code aloud; it is deliberately made
+  of characters that do not sound alike over voice chat.
 - A crash, a restart, or an alt-tab resumes the same session and the same code.
 
-Press **F9** for the panel: the code, a copy button, connection state and player
-count. It is rebindable in the config.
+Press **F9** for the panel: the code, connection state, player count, a copy
+button, and a QR code of the map link. Opening it copies the link for you, so
+the button is there for when you have copied something else since. The key is
+rebindable in the config.
+
+The QR is generated inside the game — the code never goes to a QR service, for
+the same reason it rides in the link's `#fragment`: anyone holding it can watch
+everyone in the session move. Worth remembering before leaving the panel open on
+stream, since a camera reads the square rather faster than a person reads the
+code.
 
 ## Do other players need the mod?
 
