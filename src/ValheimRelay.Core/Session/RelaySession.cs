@@ -375,9 +375,16 @@ namespace ValheimRelay.Core.Session
             _outbound.SetPosition(FrameCodec.WritePosition(sample));
         }
 
+        /// <summary>
+        /// Forward a ping to the room. Reaches every map, and — per §3.3's peer
+        /// fan-out — every other mod, which will draw it alongside the copy the
+        /// game already delivered them. <c>PingEcho</c> is what keeps that from
+        /// being two pings; the caller is responsible for having consulted it.
+        /// </summary>
         public void SendPing(double x, double z)
         {
             if (_state != SessionState.Active) return;
+            if (!_options.SharePings) return;
             var ping = new PingFrame(x, z, _identity?.PlayerName, _clock.UnixTimeMilliseconds);
             EnqueueReliable(FrameCodec.WritePing(ping));
         }

@@ -14,6 +14,7 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M2 — single player, outbound | **Loads and starts a session in-game.** Whether position frames arrive is untested — there is no map yet to receive them |
 | M3 — multiplayer, zero typing | Code complete; patches apply on the current game build. Never run with a second player |
 | M4 — inbound markers and pings | Pings from a map now arrive in-game. The first one landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead. Markers still unverified |
+| M4b — outbound ping capture | **Code complete, never run in a game.** A ping made in game now reaches the room, closing §3.3's other direction. See below |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
 | M6 — packaging | Manifest, README and changelog written; no icon yet |
 
@@ -21,6 +22,48 @@ implementing it turned up**, and is the first thing to read after the plan.
 so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
 inbound (§4 markers, pings) and the whole point of the outbound stream are
 consequently unverified end to end: the mod sends, and nothing is reading.
+
+## Ping capture (§3.3, outbound)
+
+A ping made in game is forwarded to the room, so it appears on every browser
+watching. It is observed on `Chat.OnNewChatMessage` filtered to
+`Talker.Type.Ping` — §4.4's hook — because a ping is not a method of its own:
+the marker, the sound and the world text are all what that handler does with a
+ping message. The patch never consumes the line, so the game draws the ping
+exactly as it always did.
+
+**Three things make one ping stay one ping, and they are three different
+problems:**
+
+- **The mod's own render would loop.** `GameBridge.ShowPing` draws an *inbound*
+  ping by calling `Chat.OnNewChatMessage` locally — the very method the capture
+  patch hooks. Left alone, every ping from a browser would be forwarded straight
+  back, fanned out to the peer mods by §3.3, rendered and re-forwarded by each.
+  `GameBridge.IsRenderingPing` is set across that call and is the patch's first
+  test. The two ends also share one method lookup, so they cannot resolve
+  different `OnNewChatMessage` overloads and leave the guard watching the wrong
+  one.
+- **Every modded client would forward the same ping.** Valheim broadcasts a ping
+  to everyone itself, so N mods would put N copies on the wire and the map would
+  draw N rings. Only the local player's own ping is forwarded, compared on
+  `ZNet.GetUID`. When that comparison cannot be made the ping IS forwarded and a
+  warning is logged once — a coincident duplicate ring is invisible, whereas a
+  feature that silently does nothing is not.
+- **Peer mods would draw it twice.** §3.3 fans a mod's ping out to the other
+  mods, which have all just seen it natively. `PingEcho` (in `Core`, and tested)
+  swallows exactly one relayed copy per ping observed in game. It consumes the
+  match rather than muting a window, so a browser deliberately pinging where
+  somebody just pinged still gets through.
+
+`ShareMyPings` (Privacy, default on) turns forwarding off. It is deliberately
+separate from `ShareMyPosition`: a ping is something the player chose to do.
+A client with it off still records what it sees, because the duplicate it needs
+to suppress is somebody else's.
+
+**Not verified in a game.** `PingEcho` and the session's send gate are covered by
+the `Core` suite. The patch itself, the re-entrancy guard and the argument reader
+are plugin-side, so nothing in CI compiles them; the argument reader was checked
+out of band against four call shapes and each non-ping talker type.
 
 The relay at `wss://valheimrelay.bobmitch.com/ws` **is up**, and the handshake
 contract is confirmed against it rather than only against the fixture: `role=mod`

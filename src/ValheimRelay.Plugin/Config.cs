@@ -61,6 +61,11 @@ namespace ValheimRelay.Plugin
             AcceptMapMarkers = file.Bind("Privacy", "AcceptMapMarkers", true,
                 "Let the web map place pins on your in-game minimap.");
 
+            ShareMyPings = file.Bind("Privacy", "ShareMyPings", true,
+                "Send the pings you make in game to the web map. Separate from ShareMyPosition: a ping is "
+                + "something you chose to do, so turning off the position stream does not turn this off. "
+                + "Pings from other players are never forwarded by you, only your own.");
+
             PositionInterval = file.Bind("Performance", "PositionInterval", 1.0f,
                 new ConfigDescription(
                     "Seconds between position updates. Clamped to at least 0.5.",
@@ -98,6 +103,7 @@ namespace ValheimRelay.Plugin
         public ConfigEntry<bool> ShareMyPosition { get; }
         public ConfigEntry<bool> ShareHealth { get; }
         public ConfigEntry<bool> AcceptMapMarkers { get; }
+        public ConfigEntry<bool> ShareMyPings { get; }
         public ConfigEntry<float> PositionInterval { get; }
         public ConfigEntry<KeyCode> ToggleKey { get; }
         public ConfigEntry<bool> ToggleRequiresShift { get; }
@@ -109,7 +115,8 @@ namespace ValheimRelay.Plugin
             {
                 RelayUrl = NormaliseRelayUrl(RelayUrl.Value),
                 PositionInterval = TimeSpan.FromSeconds(PositionInterval.Value),
-                SharePosition = ShareMyPosition.Value
+                SharePosition = ShareMyPosition.Value,
+                SharePings = ShareMyPings.Value
             };
 
             options.Normalise();
