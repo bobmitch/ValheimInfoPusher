@@ -29,6 +29,17 @@ namespace ValheimRelay.Plugin
         private bool _sessionRunning;
         private float _discoveryDeadline;
         private bool _fallbackConsidered;
+        private bool _pingSenderWarned;
+        private bool _pingSilenceWarned;
+        private int _pingsForwarded;
+        private int _pingsRejected;
+
+        /// <summary>
+        /// How many pings may be read as somebody else's before that is treated
+        /// as suspicious. Three, because one or two really can be another
+        /// player's — the point is a run of them with none of our own.
+        /// </summary>
+        private const int PingRejectionsBeforeWarning = 3;
 
         public RelaySession? Session => _session;
 
@@ -53,6 +64,101 @@ namespace ValheimRelay.Plugin
 
         /// <summary>A peer's chat line, forwarded from the chat patch.</summary>
         public bool TryConsumeChat(long sender, string? text) => _channel.TryConsumeChat(sender, text);
+
+        /// <summary>
+        /// A ping the GAME has just delivered, forwarded from the ping patch —
+        /// the outbound half of §3.3.
+        /// <para>
+        /// Two duplicate problems meet here and they need different answers.
+        /// The GAME already showed this ping to every player in the world, so
+        /// the copy §3.3 fans out to peer mods would be a second marker and a
+        /// second sound: <see cref="GameBridge.NoteGamePing"/> is what swallows
+        /// that, and it is recorded for EVERY ping observed, whether or not this
+        /// client is the one forwarding it. The WIRE has the other problem: with
+        /// every modded client forwarding, one ping would reach the web map once
+        /// per mod, so only the local player's own ping goes out.
+        /// </para>
+        /// </summary>
+        public void OnGamePing(Vector3 position, long senderId)
+        {
+            // Before every gate below it. A client with sharing off still sees
+            // the relayed copies of everyone else's pings, so it still needs to
+            // know which of them it has already been shown.
+            _bridge.NoteGamePing(position.x, position.z);
+
+            if (!_plugin.Settings.ShareMyPings.Value) return;
+            if (!_sessionRunning) return;
+
+            if (!IsLocalPing(senderId))
+            {
+                WarnIfNothingIsEverForwarded(senderId);
+                return;
+            }
+
+            _pingsForwarded++;
+
+            // The session refuses this unless it is Active, so a ping made
+            // while reconnecting is dropped rather than queued: it is a "look
+            // here, now", and arriving a reconnect late points at nothing.
+            _session?.SendPing(position.x, position.z);
+        }
+
+        /// <summary>
+        /// The one failure this feature could have that nobody would notice.
+        /// <para>
+        /// The local filter assumes the sender id on a ping message is the same
+        /// id <c>ZNet.GetUID</c> returns, and that the game routes the local
+        /// player's own ping back through the chat handler rather than drawing
+        /// it directly. If either is untrue on some build, every ping is read as
+        /// somebody else's, nothing is ever forwarded, and the mod looks like it
+        /// is working — the pings still appear in game, because this patch never
+        /// touched them. A player would have no way to tell that from an empty
+        /// room. So say it once, with both ids in the line, rather than leaving
+        /// it to be guessed at.
+        /// </para>
+        /// </summary>
+        private void WarnIfNothingIsEverForwarded(long senderId)
+        {
+            if (_pingSilenceWarned || _pingsForwarded > 0) return;
+            if (++_pingsRejected < PingRejectionsBeforeWarning) return;
+
+            _pingSilenceWarned = true;
+            _plugin.Log.Warn(
+                "seen " + _pingsRejected + " pings in game and forwarded none of them: every one read as "
+                + "another player's (self=" + _bridge.SelfPeerId + ", last sender=" + senderId + "). If you "
+                + "are alone in this world that is a bug — pings made here are not reaching the web map, "
+                + "while pings FROM the map still work.");
+        }
+
+        /// <summary>
+        /// Whether this ping is the local player's, which is the whole of the
+        /// wire-side duplicate filter.
+        /// <para>
+        /// WHEN IT CANNOT TELL, IT SAYS YES. An unresolvable id means every
+        /// modded client forwards, so the map draws one ring per mod — which,
+        /// being the same ring at the same place at the same moment, is
+        /// indistinguishable from one, and the in-game duplicate is handled by
+        /// the echo window regardless. Answering no would instead make the
+        /// feature quietly do nothing, which is far harder to notice and far
+        /// worse. It is logged once so it is at least diagnosable.
+        /// </para>
+        /// </summary>
+        private bool IsLocalPing(long senderId)
+        {
+            var self = _bridge.SelfPeerId;
+            if (self != 0 && senderId != 0) return senderId == self;
+
+            if (!_pingSenderWarned)
+            {
+                _pingSenderWarned = true;
+                _plugin.Log.Warn(
+                    "could not tell whose ping this is (self=" + self + ", sender=" + senderId + "), so pings "
+                    + "made in game are being forwarded without that check. If several players here run the "
+                    + "mod, the web map may draw one ring per player for a single ping.");
+            }
+
+            return true;
+        }
 
         /// <summary>Called once the world is loaded and there is a local player.</summary>
         public void StartSession()

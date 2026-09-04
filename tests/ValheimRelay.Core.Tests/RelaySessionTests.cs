@@ -788,6 +788,69 @@ namespace ValheimRelay.Core.Tests
             Assert.Single(_transport.SentOfType(FrameTypes.Position));
         }
 
+        // --------------------------------------------------------- outbound pings
+
+        [Fact]
+        public void APingMadeInGameReachesTheRoom()
+        {
+            StartAsCreator();
+            _transport.Sent.Clear();
+
+            _session.SendPing(123.5, -456.25);
+            Tick();
+
+            var ping = Assert.Single(_transport.SentOfType(FrameTypes.Ping));
+            Assert.Equal(123.5, ping["x"].AsDouble(), 3);
+            Assert.Equal(-456.25, ping["z"].AsDouble(), 3);
+
+            // The name rides along so a browser can say whose ping it is: the
+            // relay stamps a playerId on a mod's frame but nothing else.
+            Assert.Equal("Bob", ping["name"].AsString());
+        }
+
+        [Fact]
+        public void APingIsNotSentWhenTheSharingSwitchIsOff()
+        {
+            // §7 ShareMyPings. Separate from ShareMyPosition: a player who has
+            // turned off the position stream has not asked to stop pinging.
+            StartAsCreator();
+            _transport.Sent.Clear();
+            _options.SharePings = false;
+
+            _session.SendPing(1, 2);
+            Tick();
+
+            Assert.Empty(_transport.SentOfType(FrameTypes.Ping));
+        }
+
+        [Fact]
+        public void PositionSharingAndPingSharingAreIndependent()
+        {
+            StartAsCreator();
+            _transport.Sent.Clear();
+            _options.SharePosition = false;
+
+            _session.SendPing(1, 2);
+            Tick();
+
+            Assert.Single(_transport.SentOfType(FrameTypes.Ping));
+        }
+
+        [Fact]
+        public void APingMadeBeforeTheSessionIsLiveIsDroppedRatherThanQueued()
+        {
+            // A ping is "look here, now". Replaying one after a reconnect points
+            // at a place nobody is standing any more, so it is dropped on the
+            // floor rather than held in the reliable queue with the markers.
+            _session.Start(Identity());
+            _session.SendPing(1, 2);
+            Tick(6);
+            _transport.CompleteConnect();
+            Tick();
+
+            Assert.Empty(_transport.SentOfType(FrameTypes.Ping));
+        }
+
         // ---------------------------------------------------------------- inbound
 
         [Fact]

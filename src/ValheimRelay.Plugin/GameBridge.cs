@@ -300,6 +300,14 @@ namespace ValheimRelay.Plugin
 
         private readonly List<PingPin> _pingPins = new List<PingPin>();
 
+        /// <summary>
+        /// Pings this client has already seen through the game, so §3.3's peer
+        /// fan-out does not draw them again. Lives here rather than in
+        /// <c>RelayBehaviour</c> because both ends of it — the capture and the
+        /// render — are in this file.
+        /// </summary>
+        private readonly PingEcho _pingEcho = new PingEcho();
+
         private MethodInfo? _chatPing;
         private bool _chatPingResolved;
         private MethodInfo? _groundHeight;
@@ -310,6 +318,20 @@ namespace ValheimRelay.Plugin
         private bool _addPingResolved;
         private bool _pingApiDescribed;
         private string? _pingPathLogged;
+
+        /// <summary>
+        /// Set while <see cref="TryVanillaPing"/> is inside the game's own chat
+        /// handler, which is the SAME method the capture patch hooks.
+        /// <para>
+        /// WITHOUT THIS THE FEATURE EATS ITSELF. Rendering an inbound ping
+        /// calls <c>Chat.OnNewChatMessage</c> locally; the patch would see that
+        /// call, forward it to the relay as a fresh ping, and §3.3 would fan it
+        /// back out to every peer mod, which would each render and re-forward
+        /// it in turn. Static because the patch is static and has no instance
+        /// to ask, and there is only ever one bridge.
+        /// </para>
+        /// </summary>
+        public static bool IsRenderingPing { get; private set; }
 
         /// <summary>
         /// Valheim's own transient ping, so a map ping feels identical in-game.
@@ -348,6 +370,15 @@ namespace ValheimRelay.Plugin
             {
                 if (Minimap.instance == null) return;
 
+                // The relayed copy of a ping this client already saw in game.
+                // Checked before anything is resolved or drawn, and before the
+                // ground height is probed, because the cheapest ping is the one
+                // that never starts.
+                if (_pingEcho.ShouldSuppress(x, z, Now))
+                {
+                    return;
+                }
+
                 DescribePingApi();
 
                 // A ping is a place in the world, not just a spot on the map:
@@ -366,6 +397,25 @@ namespace ValheimRelay.Plugin
                 _log.Warn("could not show a ping: " + ex.Message);
             }
         }
+
+        /// <summary>
+        /// Record a ping the GAME has just delivered — the local player's or
+        /// another player's, it makes no difference here.
+        /// <para>
+        /// Called for every observed ping, including when this client is not
+        /// forwarding its own: the duplicate to be suppressed is the copy a
+        /// DIFFERENT player's mod put on the wire, so a client with
+        /// <c>ShareMyPings</c> off still needs the record.
+        /// </para>
+        /// </summary>
+        public void NoteGamePing(double x, double z) => _pingEcho.Observe(x, z, Now);
+
+        /// <summary>
+        /// The bridge's clock. <c>Time.realtimeSinceStartup</c> rather than a
+        /// wall clock: nothing here is compared against another machine's time,
+        /// and it does not move when the game is paused.
+        /// </summary>
+        private static TimeSpan Now => TimeSpan.FromSeconds(Time.realtimeSinceStartup);
 
         /// <summary>
         /// Expires fallback ping pins. Cheap and safe to call every frame; does
@@ -389,6 +439,11 @@ namespace ValheimRelay.Plugin
         {
             foreach (var ping in _pingPins) RemovePin(ping.Pin);
             _pingPins.Clear();
+
+            // A ping seen before a world unload cannot have a relayed copy
+            // worth swallowing after one, and keeping it would only mean
+            // discarding the first real ping of the next session.
+            _pingEcho.Clear();
         }
 
         /// <summary>
@@ -406,6 +461,12 @@ namespace ValheimRelay.Plugin
             var args = BuildChatPingArgs(method, position, name);
             if (args == null) return false;
 
+            // The capture patch hooks this very method, so it has to be told
+            // that what is about to come through it is ours. `finally` rather
+            // than a reset after the call: the invoke throws from inside the
+            // game's code, and a flag left set would mute capture for the rest
+            // of the session.
+            IsRenderingPing = true;
             try
             {
                 method.Invoke(chat, args);
@@ -420,6 +481,10 @@ namespace ValheimRelay.Plugin
                 _chatPing = null;
                 _log.Warn("the game's ping path failed, falling back to the minimap: " + Unwrap(ex).Message);
                 return false;
+            }
+            finally
+            {
+                IsRenderingPing = false;
             }
         }
 
@@ -669,23 +734,8 @@ namespace ValheimRelay.Plugin
 
             try
             {
-                foreach (var candidate in typeof(Chat).GetMethods(AnyInstanceMethod))
-                {
-                    if (!string.Equals(candidate.Name, "OnNewChatMessage", StringComparison.Ordinal)) continue;
-
-                    var position = false;
-                    var talkerType = false;
-                    foreach (var parameter in candidate.GetParameters())
-                    {
-                        if (parameter.ParameterType == typeof(Vector3)) position = true;
-                        else if (parameter.ParameterType.IsEnum && HasEnumName(parameter.ParameterType, "Ping")) talkerType = true;
-                    }
-
-                    if (!position || !talkerType) continue;
-
-                    _chatPing = candidate;
-                    return _chatPing;
-                }
+                _chatPing = FindChatPingMethod();
+                if (_chatPing != null) return _chatPing;
 
                 _log.Info("Chat.OnNewChatMessage is not usable for pings on this build, so pings will be drawn on the map only.");
             }
@@ -695,6 +745,101 @@ namespace ValheimRelay.Plugin
             }
 
             return _chatPing;
+        }
+
+        /// <summary>
+        /// The <c>Chat.OnNewChatMessage</c> overload that carries a ping, found
+        /// by shape rather than by signature for the reason §4.3 gives: this is
+        /// the parameter list it singles out as having changed across versions.
+        /// A ping cannot do without two of them — somewhere to put it, and a
+        /// talker type that knows what a ping is — so those two are what is
+        /// matched on.
+        /// <para>
+        /// STATIC, AND SHARED WITH THE CAPTURE PATCH ON PURPOSE. The mod both
+        /// renders inbound pings through this method and hooks it to capture
+        /// outbound ones. If the two ever resolved different overloads, the
+        /// re-entrancy guard in <see cref="TryVanillaPing"/> would still be set
+        /// but the patch watching the other overload would never see it —
+        /// which is the loop that guard exists to prevent, arriving through the
+        /// back door. One lookup means they cannot drift.
+        /// </para>
+        /// </summary>
+        public static MethodInfo? FindChatPingMethod()
+        {
+            foreach (var candidate in typeof(Chat).GetMethods(AnyInstanceMethod))
+            {
+                if (!string.Equals(candidate.Name, "OnNewChatMessage", StringComparison.Ordinal)) continue;
+
+                var position = false;
+                var talkerType = false;
+                foreach (var parameter in candidate.GetParameters())
+                {
+                    if (parameter.ParameterType == typeof(Vector3)) position = true;
+                    else if (parameter.ParameterType.IsEnum && HasEnumName(parameter.ParameterType, "Ping")) talkerType = true;
+                }
+
+                if (!position || !talkerType) continue;
+                return candidate;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Pulls a ping out of a <c>Chat.OnNewChatMessage</c> call by argument
+        /// SHAPE, for the same reason the lookup above matches by shape.
+        /// <para>
+        /// Returns false for every chat line that is not a ping, which is
+        /// almost all of them — the enum has to be present AND read as
+        /// <c>Ping</c>, so an ordinary shout with a position on it does not
+        /// qualify.
+        /// </para>
+        /// <para>
+        /// NOT COVERED BY THE CORE SUITE, because it reads Unity types and
+        /// those cannot cross into a project that builds without the game. It
+        /// was checked out of band against four argument shapes — the current
+        /// build's, an older one with the sender name as a bare string, a
+        /// reordered one, and each non-ping talker type — but that check is not
+        /// something CI re-runs, so treat a change here as unverified until it
+        /// has been in a game.
+        /// </para>
+        /// </summary>
+        public static bool TryReadPingArgs(object[]? args, out Vector3 position, out long senderId)
+        {
+            position = default;
+            senderId = 0;
+
+            if (args == null) return false;
+
+            var hasPosition = false;
+            var isPing = false;
+            var hasSender = false;
+
+            foreach (var arg in args)
+            {
+                switch (arg)
+                {
+                    case Vector3 vector when !hasPosition:
+                        position = vector;
+                        hasPosition = true;
+                        break;
+
+                    // The first long is the sender. A build that grows a second
+                    // one would have it read as something else entirely, which
+                    // is why this is only ever used to compare against our own
+                    // id and never to attribute a ping to anybody.
+                    case long id when !hasSender:
+                        senderId = id;
+                        hasSender = true;
+                        break;
+
+                    case Enum value when !isPing:
+                        isPing = string.Equals(value.ToString(), "Ping", StringComparison.Ordinal);
+                        break;
+                }
+            }
+
+            return hasPosition && isPing;
         }
 
         /// <summary>

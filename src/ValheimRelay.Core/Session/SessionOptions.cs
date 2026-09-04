@@ -65,6 +65,18 @@ namespace ValheimRelay.Core.Session
         public bool SharePosition { get; set; } = true;
 
         /// <summary>
+        /// Whether this client forwards its own in-game pings to the room (§7
+        /// <c>ShareMyPings</c>).
+        /// <para>
+        /// Separate from <see cref="SharePosition"/> on purpose: a ping is a
+        /// deliberate act aimed at the people you are playing with, whereas
+        /// position is a continuous stream you may simply not want running. The
+        /// player who turns one off has not asked for the other.
+        /// </para>
+        /// </summary>
+        public bool SharePings { get; set; } = true;
+
+        /// <summary>
         /// How long to wait for <c>welcome</c> after the socket opens before
         /// giving up and retrying.
         /// </summary>
