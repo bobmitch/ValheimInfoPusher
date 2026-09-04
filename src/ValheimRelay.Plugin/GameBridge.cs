@@ -497,6 +497,18 @@ namespace ValheimRelay.Plugin
         /// exist yet. Failing both, zero: a ping at sea level is where this
         /// started, and is still better than no ping.
         /// </para>
+        /// <para>
+        /// <b>A MISS IS NOT ZERO.</b> The two <c>ZoneSystem.GetGroundHeight</c>
+        /// overloads report "nothing there" differently. The <c>out</c> one
+        /// writes <c>0f</c> and returns <c>false</c>. The <c>float</c> one takes
+        /// its position by value, raises its own copy to 6000 for the raycast,
+        /// and on a miss returns <em>the y of the position it was handed</em> —
+        /// so testing its answer for zero accepts the probe altitude as a
+        /// height. That is what put every ping outside the loaded zones 5 km
+        /// into the sky, and it never reached the generator fallback that would
+        /// have answered correctly. The in-game map looked right throughout,
+        /// because <c>Minimap.WorldToMapPoint</c> reads x and z and never y.
+        /// </para>
         /// </summary>
         private float GroundHeight(float x, float z)
         {
@@ -504,9 +516,11 @@ namespace ValheimRelay.Plugin
 
             try
             {
-                // Probe from far above the world. The measured path is a
-                // downward raycast on the builds that have it, and one that
-                // starts underground hits nothing on the way down.
+                // This y is NOT the raycast origin: both overloads overwrite
+                // it with 6000 before casting down. It survives only as what the
+                // float overload hands back when it hits nothing, which is what
+                // the check below tests for — so it has to stay an altitude no
+                // terrain in this game reaches.
                 var probe = new Vector3(x, 5000f, z);
                 var zones = ZoneSystem.instance;
 
@@ -521,10 +535,12 @@ namespace ValheimRelay.Plugin
 
                 if (zones != null && _groundHeightDirect != null
                     && _groundHeightDirect.Invoke(zones, Fill(_groundHeightDirect, probe)) is float direct
+                    && !Mathf.Approximately(direct, probe.y)
                     && Mathf.Abs(direct) > 0.001f)
                 {
-                    // Exactly zero is what these return when they found nothing,
-                    // and is not a height any real terrain sits at.
+                    // Neither of the two ways a build can say it found nothing:
+                    // handing the probe's own altitude straight back, which is
+                    // what this overload does, or answering exactly zero.
                     return direct;
                 }
 
