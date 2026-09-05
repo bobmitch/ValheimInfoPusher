@@ -33,6 +33,10 @@
     before the game references can confuse the diagnosis, so prefer leaving
     them on.
 
+.PARAMETER Package
+    Assemble a Thunderstore-ready zip in dist/ from the built assemblies and
+    the files in packaging/. Implies a build; does not need -Deploy.
+
 .PARAMETER Clean
     Delete bin/ and obj/ under the plugin first. Do this after a game update:
     the publicized copy of assembly_valheim is cached in obj/ and will
@@ -46,6 +50,9 @@
 
 .EXAMPLE
     .\build.ps1 -Clean -Deploy -ValheimInstall 'D:\Steam\steamapps\common\Valheim'
+
+.EXAMPLE
+    .\build.ps1 -Package
 #>
 [CmdletBinding()]
 param(
@@ -55,6 +62,7 @@ param(
     [switch] $Deploy,
     [string] $PluginsDir,
     [switch] $SkipTests,
+    [switch] $Package,
     [switch] $Clean
 )
 
@@ -64,6 +72,8 @@ Set-StrictMode -Version Latest
 $RepoRoot    = $PSScriptRoot
 $PluginProj  = Join-Path $RepoRoot 'src\ValheimRelay.Plugin'
 $Solution    = Join-Path $RepoRoot 'ValheimRelay.sln'
+$PackageDir  = Join-Path $RepoRoot 'packaging'
+$DistDir     = Join-Path $RepoRoot 'dist'
 
 function Write-Step { param([string] $Text) Write-Host "`n==> $Text" -ForegroundColor Cyan }
 function Write-Note { param([string] $Text) Write-Host "    $Text" -ForegroundColor DarkGray }
@@ -208,10 +218,104 @@ foreach ($artifact in $artifacts) {
 Write-Step 'Built'
 foreach ($artifact in $artifacts) { Write-Host "    $artifact" }
 
+# --- package ----------------------------------------------------------------
+
+if ($Package) {
+    Write-Step 'Packaging for Thunderstore'
+
+    $manifestPath  = Join-Path $PackageDir 'manifest.json'
+    $iconPath      = Join-Path $PackageDir 'icon.png'
+    $readmePath    = Join-Path $PackageDir 'README.md'
+    $changelogPath = Join-Path $PackageDir 'CHANGELOG.md'
+
+    # Thunderstore rejects the upload if any of these is missing from the zip
+    # root, which is a slow and irritating way to find out. Check up front.
+    foreach ($required in $manifestPath, $iconPath, $readmePath) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            throw "Thunderstore requires $(Split-Path -Leaf $required) at the zip root, but '$required' does not exist."
+        }
+    }
+
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    if (-not $manifest.PSObject.Properties['version_number']) {
+        throw "packaging/manifest.json has no version_number."
+    }
+    $version = $manifest.version_number
+
+    # The manifest version and the assembly version drift apart easily, and
+    # nothing downstream notices: the mod manager shows one, the BepInEx log
+    # prints the other, and the bug report cites whichever the reporter saw.
+    $assemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($artifacts[0]).Version
+    $assemblyShort = '{0}.{1}.{2}' -f $assemblyVersion.Major, $assemblyVersion.Minor, $assemblyVersion.Build
+    if ($assemblyShort -ne $version) {
+        throw @"
+Version mismatch: packaging/manifest.json says $version, ValheimRelay.dll says $assemblyShort.
+These are bumped together, in three places:
+
+    packaging/manifest.json                            version_number
+    src/ValheimRelay.Plugin/ValheimRelay.Plugin.csproj  <Version>
+    src/ValheimRelay.Plugin/Plugin.cs                   PluginVersion
+"@
+    }
+
+    # icon.png must be exactly 256x256. The dimensions live in the PNG's IHDR
+    # chunk at a fixed offset, big-endian -- cheaper than decoding the image,
+    # and this is the other thing Thunderstore rejects on upload.
+    $png = [System.IO.File]::ReadAllBytes($iconPath)
+    if ($png.Length -lt 24) { throw "'$iconPath' is too short to be a PNG." }
+    $iconW = ($png[16] -shl 24) -bor ($png[17] -shl 16) -bor ($png[18] -shl 8) -bor $png[19]
+    $iconH = ($png[20] -shl 24) -bor ($png[21] -shl 16) -bor ($png[22] -shl 8) -bor $png[23]
+    if ($iconW -ne 256 -or $iconH -ne 256) {
+        throw "icon.png must be 256x256; '$iconPath' is ${iconW}x${iconH}. Regenerate it with packaging/make-icon.py."
+    }
+
+    $staging = Join-Path $DistDir 'staging'
+    if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path (Join-Path $staging 'plugins') | Out-Null
+
+    Copy-Item -LiteralPath $manifestPath, $iconPath, $readmePath -Destination $staging
+    if (Test-Path -LiteralPath $changelogPath) {
+        Copy-Item -LiteralPath $changelogPath -Destination $staging
+    }
+    foreach ($artifact in $artifacts) {
+        Copy-Item -LiteralPath $artifact -Destination (Join-Path $staging 'plugins')
+    }
+
+    if (-not ('System.IO.Compression.ZipFile' -as [type])) {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+    }
+
+    $zipPath = Join-Path $DistDir "ValheimRelay-$version.zip"
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+
+    # Entry names are written by hand with forward slashes rather than through
+    # CreateFromDirectory: Windows PowerShell has shipped zip writers that emit
+    # backslashes for nested directories, and an extractor that takes them
+    # literally produces a single file named 'plugins\ValheimRelay.dll' -- which
+    # installs cleanly and then never loads.
+    $zip = [System.IO.Compression.ZipFile]::Open($zipPath, 'Create')
+    try {
+        foreach ($file in (Get-ChildItem -LiteralPath $staging -Recurse -File | Sort-Object FullName)) {
+            $entry = $file.FullName.Substring($staging.Length + 1).Replace('\', '/')
+            [void] [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($zip, $file.FullName, $entry)
+            Write-Note $entry
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+
+    Remove-Item -LiteralPath $staging -Recurse -Force
+
+    Write-Step 'Packaged'
+    Write-Host "    $zipPath"
+    Write-Note 'Upload it at https://thunderstore.io/c/valheim/create/'
+}
+
 # --- deploy -----------------------------------------------------------------
 
 if (-not $Deploy) {
-    Write-Host "`nRe-run with -Deploy to copy these into BepInEx/plugins." -ForegroundColor DarkGray
+    Write-Host "`nRe-run with -Deploy to copy these into BepInEx/plugins, or -Package for a Thunderstore zip." -ForegroundColor DarkGray
     return
 }
 
