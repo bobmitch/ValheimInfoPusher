@@ -263,8 +263,27 @@ These are bumped together, in three places:
     # and this is the other thing Thunderstore rejects on upload.
     $png = [System.IO.File]::ReadAllBytes($iconPath)
     if ($png.Length -lt 24) { throw "'$iconPath' is too short to be a PNG." }
-    $iconW = ($png[16] -shl 24) -bor ($png[17] -shl 16) -bor ($png[18] -shl 8) -bor $png[19]
-    $iconH = ($png[20] -shl 24) -bor ($png[21] -shl 16) -bor ($png[22] -shl 8) -bor $png[23]
+
+    # Confirm the signature and the IHDR tag before trusting the offsets below.
+    # A file that is not a PNG -- or one some tool has mangled on the way to
+    # disk -- otherwise reports whatever those bytes happen to hold, which
+    # sends you off regenerating an icon that was never the problem.
+    $pngHeader = [byte[]] (
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,   # PNG signature
+        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52    # IHDR length + tag
+    )
+    for ($i = 0; $i -lt $pngHeader.Length; $i++) {
+        if ($png[$i] -ne $pngHeader[$i]) {
+            throw "'$iconPath' is not a PNG: expected a signature followed by an IHDR chunk. Regenerate it with packaging/make-icon.py."
+        }
+    }
+
+    # Widen each byte to int before shifting. -shl returns the type of its left
+    # operand, so shifting a [byte] drops everything past bit 7: every term but
+    # the last is 0 and a 256x256 icon reads back as 0x0, failing the check
+    # below for every image ever passed to it.
+    $iconW = ((([int] $png[16]) -shl 24) -bor (([int] $png[17]) -shl 16) -bor (([int] $png[18]) -shl 8) -bor ([int] $png[19]))
+    $iconH = ((([int] $png[20]) -shl 24) -bor (([int] $png[21]) -shl 16) -bor (([int] $png[22]) -shl 8) -bor ([int] $png[23]))
     if ($iconW -ne 256 -or $iconH -ne 256) {
         throw "icon.png must be 256x256; '$iconPath' is ${iconW}x${iconH}. Regenerate it with packaging/make-icon.py."
     }
