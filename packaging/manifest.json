@@ -1,6 +1,6 @@
 {
   "name": "ValheimRelay",
-  "version_number": "0.1.0",
+  "version_number": "0.1.1",
   "website_url": "https://github.com/bobmitch/ValheimInfoPusher",
   "description": "Share a live map of your world with anyone in a browser. No logins, nothing to configure.",
   "dependencies": [
