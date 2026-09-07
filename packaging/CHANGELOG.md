@@ -10,7 +10,9 @@ what M0 still has to settle).
 - Zero-typing code sharing between modded clients, over a routed RPC with an
   automatic chat fallback.
 - Position, ping and marker telemetry to the web map.
-- Pings and markers from the map appear on the in-game minimap.
+- Pings and markers from the map appear on the in-game minimap, and
+  `StreamerMode` turns that half off in one switch for a code you are sharing
+  publicly.
 - Shift+F8 panel with the code, connection state and a copy button. Opening it puts
   the map link on the clipboard, and draws it as a QR code so a phone can open
   the map without typing. The QR is generated in-process; the session code is

@@ -43,6 +43,7 @@ namespace ValheimRelay.Plugin
         private bool _visible;
         private float _copiedAt = float.NegativeInfinity;
         private GUIStyle? _codeStyle;
+        private GUIStyle? _indicatorStyle;
         private GUIStyle? _noteStyle;
 
         // The snapshot the whole of Draw reads. See Refresh.
@@ -275,9 +276,17 @@ namespace ValheimRelay.Plugin
                 _ => "relay …"
             };
 
+            // A different axis from the dot, which is about what goes OUT, so it
+            // reads as its own word rather than as another symbol. Somebody who
+            // turned this on before going live needs to confirm at a glance, on
+            // camera, that it is actually armed.
+            if (_config.StreamerMode.Value) label += "  one-way";
+
             var previous = GUI.color;
             GUI.color = colour;
-            GUI.Label(new Rect(Screen.width - 130, Screen.height - 28, 120, 20), label);
+            // Right-aligned in a rect wide enough for the longest of the above,
+            // so the indicator keeps the same edge whatever it says.
+            GUI.Label(new Rect(Screen.width - 210, Screen.height - 28, 200, 20), label, _indicatorStyle);
             GUI.color = previous;
         }
 
@@ -305,6 +314,11 @@ namespace ValheimRelay.Plugin
             {
                 fontSize = 10,
                 wordWrap = true
+            };
+
+            _indicatorStyle ??= new GUIStyle(GUI.skin.label)
+            {
+                alignment = TextAnchor.MiddleRight
             };
         }
     }

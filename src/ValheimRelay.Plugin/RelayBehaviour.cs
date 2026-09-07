@@ -215,6 +215,13 @@ namespace ValheimRelay.Plugin
             // would otherwise sit on the map until the world unloaded.
             _bridge.ExpirePings();
 
+            // Settings are read live, so this gate can close while somebody
+            // else's pins are already on the minimap — and it is closed
+            // precisely when one of them is the reason. Leaving them there
+            // would make the switch look broken at the moment it is used. Two
+            // reads and no allocation on the frames where nothing has changed.
+            if (_pins.Count > 0 && !_plugin.Settings.AcceptsMapMarkers) ClearMarkerPins();
+
             if (_session == null) return;
 
             if (Input.GetKeyDown(_plugin.Settings.ToggleKey.Value) && ToggleModifierHeld())
@@ -308,12 +315,19 @@ namespace ValheimRelay.Plugin
 
         private void OnPingReceived(PingFrame ping)
         {
+            // Gated here rather than in the bridge: whether to honour a frame is
+            // this class's business, and ShowPing's own concern is how to draw
+            // one. Skipping the call also skips PingEcho.ShouldSuppress, which
+            // costs nothing — its records expire on their own window and are
+            // capped, so unconsumed matches do not accumulate.
+            if (!_plugin.Settings.AcceptsMapPings) return;
+
             _bridge.ShowPing(ping.X, ping.Z, ping.Name);
         }
 
         private void OnMarkerReceived(MarkerFrame marker)
         {
-            if (!_plugin.Settings.AcceptMapMarkers.Value) return;
+            if (!_plugin.Settings.AcceptsMapMarkers) return;
 
             if (marker.IsRemove)
             {
@@ -338,9 +352,14 @@ namespace ValheimRelay.Plugin
 
         private void ClearPins()
         {
+            ClearMarkerPins();
+            _bridge.ClearPings();
+        }
+
+        private void ClearMarkerPins()
+        {
             foreach (var pin in _pins.Values) _bridge.RemovePin(pin);
             _pins.Clear();
-            _bridge.ClearPings();
         }
 
         // ------------------------------------------------------------ panel API

@@ -52,6 +52,16 @@ namespace ValheimRelay.Plugin
             AnnounceInChat = file.Bind("General", "AnnounceInChat", true,
                 "Print the session code in chat when the session starts. Local only — other players do not see it.");
 
+            // First in the section on purpose: it is the answer to the question
+            // most people open this file with, and reading it first tells you
+            // that the toggles under it are the fine-grained version of it.
+            StreamerMode = file.Bind("Privacy", "StreamerMode", false,
+                "One-way mode, for streaming or any code that reaches people you do not know. "
+                + "Viewers still see you exactly as before; nothing they do reaches your game. "
+                + "Overrides AcceptMapPings and AcceptMapMarkers while it is on WITHOUT changing "
+                + "them, so turning it off gives you back the settings you had. It deliberately "
+                + "does not touch what you send: being watched is the point.");
+
             ShareMyPosition = file.Bind("Privacy", "ShareMyPosition", true,
                 "Broadcast your position. Turning this off keeps you in the session and still shows you everyone else.");
 
@@ -60,6 +70,12 @@ namespace ValheimRelay.Plugin
 
             AcceptMapMarkers = file.Bind("Privacy", "AcceptMapMarkers", true,
                 "Let the web map place pins on your in-game minimap.");
+
+            AcceptMapPings = file.Bind("Privacy", "AcceptMapPings", true,
+                "Let the web map ping your game. Turning this off also drops the relayed copies of "
+                + "other modded players' pings, which costs you nothing while you are in the world "
+                + "with them: Valheim delivers those itself, and the relayed copy is the duplicate "
+                + "the mod already suppresses.");
 
             ShareMyPings = file.Bind("Privacy", "ShareMyPings", true,
                 "Send the pings you make in game to the web map. Separate from ShareMyPosition: a ping is "
@@ -102,12 +118,28 @@ namespace ValheimRelay.Plugin
         public ConfigEntry<bool> AnnounceInChat { get; }
         public ConfigEntry<bool> ShareMyPosition { get; }
         public ConfigEntry<bool> ShareHealth { get; }
+        public ConfigEntry<bool> StreamerMode { get; }
         public ConfigEntry<bool> AcceptMapMarkers { get; }
+        public ConfigEntry<bool> AcceptMapPings { get; }
         public ConfigEntry<bool> ShareMyPings { get; }
         public ConfigEntry<float> PositionInterval { get; }
         public ConfigEntry<KeyCode> ToggleKey { get; }
         public ConfigEntry<bool> ToggleRequiresShift { get; }
         public ConfigEntry<PingStyle> PingStyle { get; }
+
+        /// <summary>
+        /// Whether a ping from the room is allowed to reach the game.
+        /// <para>
+        /// This and <see cref="AcceptsMapMarkers"/> are the only things the mod
+        /// asks about inbound frames, so <see cref="StreamerMode"/> is applied
+        /// in exactly two places rather than remembered at every call site. An
+        /// inbound frame type added later is one property here, not a grep.
+        /// </para>
+        /// </summary>
+        public bool AcceptsMapPings => !StreamerMode.Value && AcceptMapPings.Value;
+
+        /// <summary>Whether a marker from the room is allowed onto the minimap.</summary>
+        public bool AcceptsMapMarkers => !StreamerMode.Value && AcceptMapMarkers.Value;
 
         public SessionOptions ToSessionOptions()
         {
