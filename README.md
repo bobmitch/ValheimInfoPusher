@@ -60,6 +60,16 @@ separate from `ShareMyPosition`: a ping is something the player chose to do.
 A client with it off still records what it sees, because the duplicate it needs
 to suppress is somebody else's.
 
+The inbound half has its own switch. `AcceptMapPings` (Privacy, default on)
+mirrors `AcceptMapMarkers`, and `StreamerMode` overrides both without changing
+them — one switch for a code that is going out to people the player does not
+know. `PluginConfig.AcceptsMapPings` and `AcceptsMapMarkers` are where the
+override is applied, so it lives in two places rather than at every call site.
+Blocking inbound pings is deliberately blunt: `ping` carries no origin (§3.3),
+so a browser's cannot be told from a peer mod's on the wire. It costs the player
+nothing, because a peer's ping is already delivered by Valheim itself and the
+relayed copy is exactly what `PingEcho` was written to swallow.
+
 **Not verified in a game.** `PingEcho` and the session's send gate are covered by
 the `Core` suite. The patch itself, the re-entrancy guard and the argument reader
 are plugin-side, so nothing in CI compiles them; the argument reader was checked

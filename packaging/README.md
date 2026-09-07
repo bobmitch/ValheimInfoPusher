@@ -63,6 +63,13 @@ per-install value that cannot be traced back to your account.
 `ShareMyPosition = false` keeps you in the session and still shows you everyone
 else — you just do not appear on the map yourself. It is not all-or-nothing.
 
+**Streaming, or sharing the code widely?** `StreamerMode = true` makes the
+session one-way: viewers see you exactly as before, and nothing they do reaches
+your game — no pings, no pins on your minimap. It overrides `AcceptMapPings` and
+`AcceptMapMarkers` without changing them, so turning it back off restores the
+settings you had, and the relay indicator reads `one-way` while it is on. It does
+not change what you send, because being watched is the point.
+
 The relay keeps nothing on disk. The only thing the mod stores is the code and
 reclaim token for worlds where it created the session, in
 `BepInEx/config/ValheimRelay.session.json`. Delete that file and you get a fresh
@@ -84,10 +91,14 @@ Everything is defaulted; a fresh install needs no edits.
 | `AnnounceInChat` | `true` | Print the code in chat when a session starts (local only) |
 | `ShareMyPosition` | `true` | Broadcast your position |
 | `ShareHealth` | `true` | Include health |
+| `StreamerMode` | `false` | One-way: viewers see you, nothing they do reaches your game |
 | `AcceptMapMarkers` | `true` | Let the map place pins on your minimap |
+| `AcceptMapPings` | `true` | Let the map ping your game |
+| `ShareMyPings` | `true` | Send the pings you make in game to the map |
 | `PositionInterval` | `1.0` | Seconds between updates, minimum 0.5 |
 | `ToggleKey` | `F8` | Shows the panel, held with Shift |
 | `ToggleRequiresShift` | `true` | Require Shift with `ToggleKey`. Off means a bare keypress |
+| `PingStyle` | `Auto` | How a ping from the map is shown. Drop to `Map` or `Pin` if a game update breaks it |
 
 ## Troubleshooting
 
