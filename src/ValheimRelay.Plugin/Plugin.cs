@@ -21,7 +21,7 @@ namespace ValheimRelay.Plugin
     {
         public const string PluginId = "com.valheimrelay.mod";
         public const string PluginName = "ValheimRelay";
-        public const string PluginVersion = "0.1.0";
+        public const string PluginVersion = "0.1.1";
 
         private Harmony? _harmony;
 
