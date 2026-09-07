@@ -18,7 +18,7 @@
     <TargetFramework>net472</TargetFramework>
     <RootNamespace>ValheimRelay.Plugin</RootNamespace>
     <AssemblyName>ValheimRelay</AssemblyName>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <AllowUnsafeBlocks>false</AllowUnsafeBlocks>
 
     <!-- Nothing here should end up in BepInEx/plugins except our own assembly. -->
