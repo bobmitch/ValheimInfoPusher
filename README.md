@@ -23,6 +23,57 @@ so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
 inbound (§4 markers, pings) and the whole point of the outbound stream are
 consequently unverified end to end: the mod sends, and nothing is reading.
 
+## Game version — Valheim 1.0 (Unity 6)
+
+**A build made against a pre-1.0 install will not run on Valheim 1.0.** Rebuild
+against the 1.0 assemblies before shipping anything.
+
+The 1.0 update changed `ZRoutedRpc.Everybody` from `public static readonly long`
+to `public const long`. A const has no storage, so the `ldsfld` an older build
+emits binds to nothing and throws `MissingFieldException` at runtime. In this
+mod that threw out of the `Player.OnSpawned` postfix — which runs inside
+`Game.SpawnPlayer`, inside `Game.UpdateRespawn`, on `FixedUpdate` — abandoning
+the spawn half-finished so the respawn never completed. The game destroyed the
+player and tried again on the next physics tick, forever: a camera spinning
+wildly around a character standing somewhere it should not be.
+
+Two things came out of that, and the second matters more than the first:
+
+- `GameCodeChannel` reads `Everybody` by reflection now, so one build works on
+  either side of 1.0. A const is a `static literal` field in metadata, which
+  `GetField` finds and `GetValue(null)` reads straight out of the metadata.
+- **No patch may throw into the game.** `PatchHelpers.Guard` wraps every prefix
+  and postfix body, and `Update`/`OnGUI` go dormant after repeated failures.
+  §11.4 asks the mod to fail soft; failing soft has to mean the *game* keeps
+  working, not that the mod logs something on its way down. See
+  `Patches/GamePatches.cs`.
+
+A trap worth knowing, because the handling already in `GameCodeChannel` did not
+catch this: **a `try`/`catch` in the same method as the broken reference never
+runs.** Mono resolves field and method tokens when it *compiles* a method and
+reports the failure at the caller's call site, so the method throws on entry,
+before its own catch block is live. Every game touch is therefore isolated
+behind a delegate or a `[MethodImpl(MethodImplOptions.NoInlining)]` method
+called from inside a `try`. The `NoInlining` is load-bearing.
+
+### Still unverified on 1.0
+
+Nothing in this repo has been run against a 1.0 install. Open questions:
+
+- **BepInEx 5.4.21 on Unity 6.** The plugin pins BepInEx 5 and HarmonyX 2.10.2.
+  Confirm BepInEx 5 loads at all under Unity 6 before assuming the rest;
+  Unity 6 titles generally want BepInEx 6.
+- **`net472` and the Unity 6 Mono profile.**
+- **Legacy input.** `RelayBehaviour` calls `UnityEngine.Input` and references
+  `UnityEngine.InputLegacyModule`. If 1.0 moved active input handling to the
+  Input System package, every one of those calls throws.
+- **Everything else this mod binds at compile time**, `Player.OnSpawned` among
+  them — its signature gained a `bool` in 1.0, which Harmony absorbed because
+  the patch targets by name.
+
+This project has no `ServerSync` or third-party network library, so the
+dependency half of the community's 1.0 guidance does not apply here.
+
 ## Ping capture (§3.3, outbound)
 
 A ping made in game is forwarded to the room, so it appears on every browser

@@ -170,8 +170,8 @@ namespace ValheimRelay.Plugin
         /// at the call site in the caller rather than inside the callee. So a
         /// try/catch wrapped around a renamed game symbol in the SAME method
         /// never runs — the method throws on entry, before its catch block is
-        /// live. That is how a missing <c>ZRoutedRpc.Everybody</c> escaped this
-        /// file's existing handlers, propagated out of the
+        /// live. That is how an unresolvable <c>ZRoutedRpc.Everybody</c> escaped
+        /// this file's existing handlers, propagated out of the
         /// <c>Player.OnSpawned</c> postfix, and aborted <c>Game.SpawnPlayer</c>
         /// mid-spawn — leaving the game in an endless respawn loop.
         /// </para>
@@ -209,10 +209,21 @@ namespace ValheimRelay.Plugin
         /// The "route this to every peer" target id.
         /// <para>
         /// Looked up rather than referenced, because the compile-time reference
-        /// to <c>ZRoutedRpc.Everybody</c> is exactly what a game update broke:
-        /// the field moved and every client running this mod dropped into an
-        /// endless respawn loop. A reflected lookup degrades to the documented
-        /// sentinel instead of taking the game down with it.
+        /// to <c>ZRoutedRpc.Everybody</c> is exactly what the Valheim 1.0
+        /// (Unity 6) update broke. The field did not move or get renamed: it
+        /// changed from <c>public static readonly long</c> to <c>public const
+        /// long</c>. A const has no storage, so the <c>ldsfld</c> this mod was
+        /// compiled to emit has nothing to bind to, and every client running it
+        /// dropped into an endless respawn loop. Recompiling against the 1.0
+        /// assemblies fixes it too — the compiler emits the literal instead —
+        /// but only for the build it was compiled against.
+        /// </para>
+        /// <para>
+        /// Reflection is what makes one build work on both. A const is a
+        /// <c>static literal</c> field in metadata, so <c>GetField</c> finds it
+        /// and <c>GetValue(null)</c> returns the constant out of the metadata
+        /// without any storage to read — the same call that reads the old
+        /// <c>static readonly</c> field on a pre-1.0 install.
         /// </para>
         /// </summary>
         private static readonly long EverybodyPeer;
@@ -227,10 +238,11 @@ namespace ValheimRelay.Plugin
         }
 
         /// <summary>
-        /// Zero is what "everybody" has been for the life of the game, so it is
-        /// the fallback — but it is a guess, and a guess that silently routes
-        /// every announcement to one peer would look like the channel simply not
-        /// working. <see cref="Register"/> says so in the log when it is used.
+        /// Zero is what "everybody" has been for the life of the game, 1.0
+        /// included, so it is the fallback — but it is a guess, and a guess that
+        /// silently routes every announcement to one peer would look like the
+        /// channel simply not working. <see cref="Register"/> says so in the log
+        /// when it is used.
         /// </summary>
         private const long EverybodyFallback = 0L;
 
@@ -243,8 +255,9 @@ namespace ValheimRelay.Plugin
                 const BindingFlags anyStatic =
                     BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy;
 
-                // A field first (what it has always been), then a property, in
-                // case the build turned it into one.
+                // A field first — const or static readonly, both are fields in
+                // metadata and both read the same way — then a property, in case
+                // some later build turns it into one.
                 object? raw = typeof(ZRoutedRpc).GetField("Everybody", anyStatic)?.GetValue(null)
                     ?? typeof(ZRoutedRpc).GetProperty("Everybody", anyStatic)?.GetValue(null);
 
