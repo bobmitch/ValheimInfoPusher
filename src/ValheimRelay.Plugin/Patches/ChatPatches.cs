@@ -45,40 +45,36 @@ namespace ValheimRelay.Plugin.Patches
         /// keeps the fallback from spamming everyone's chat; unmodded players
         /// still see it, which is why chat is the fallback and not the default.
         /// </summary>
-        private static bool Prefix(object[] __args)
+        private static bool Prefix(object[] __args) => PatchHelpers.Guard("Chat.OnNewChatMessage", () =>
         {
             var behaviour = PatchHelpers.Behaviour;
             if (behaviour == null) return true;
 
-            try
-            {
-                // Read defensively by shape rather than by position: the
-                // parameter list is exactly what has changed between versions.
-                long sender = 0;
-                string? text = null;
+            // Read defensively by shape rather than by position: the parameter
+            // list is exactly what has changed between versions.
+            long sender = 0;
+            string? text = null;
 
-                foreach (var arg in __args)
+            foreach (var arg in __args)
+            {
+                switch (arg)
                 {
-                    switch (arg)
-                    {
-                        case long id when sender == 0:
-                            sender = id;
-                            break;
-                        case string s when text == null && s.Length > 0:
-                            text = s;
-                            break;
-                    }
+                    case long id when sender == 0:
+                        sender = id;
+                        break;
+                    case string s when text == null && s.Length > 0:
+                        text = s;
+                        break;
                 }
+            }
 
-                if (text == null) return true;
-                return !behaviour.TryConsumeChat(sender, text);
-            }
-            catch (Exception ex)
-            {
-                ValheimRelayPlugin.Instance?.Log.Warn("chat patch error: " + ex.Message);
-                return true;
-            }
-        }
+            if (text == null) return true;
+            return !behaviour.TryConsumeChat(sender, text);
+        },
+        // Showing the line is what the game would have done unaided, so that is
+        // what a failure here falls back to. Swallowing chat on the way down
+        // would be the mod breaking the game quietly.
+        fallback: true);
     }
 
     /// <summary>
@@ -130,7 +126,7 @@ namespace ValheimRelay.Plugin.Patches
         /// after one returns false has moved between versions, and this patch
         /// should not be the thing that depends on which.
         /// </summary>
-        private static void Prefix(object[] __args)
+        private static void Prefix(object[] __args) => PatchHelpers.Guard("Chat ping capture", () =>
         {
             // The mod's own render of an INBOUND ping comes through this very
             // method. Forwarding it would put it back on the wire, and §3.3's
@@ -141,15 +137,8 @@ namespace ValheimRelay.Plugin.Patches
             var behaviour = PatchHelpers.Behaviour;
             if (behaviour == null) return;
 
-            try
-            {
-                if (!GameBridge.TryReadPingArgs(__args, out Vector3 position, out var senderId)) return;
-                behaviour.OnGamePing(position, senderId);
-            }
-            catch (Exception ex)
-            {
-                ValheimRelayPlugin.Instance?.Log.Warn("ping capture error: " + ex.Message);
-            }
-        }
+            if (!GameBridge.TryReadPingArgs(__args, out Vector3 position, out var senderId)) return;
+            behaviour.OnGamePing(position, senderId);
+        });
     }
 }

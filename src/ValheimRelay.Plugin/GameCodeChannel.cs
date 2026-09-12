@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using ValheimRelay.Core.Session;
 
 namespace ValheimRelay.Plugin
@@ -45,7 +47,21 @@ namespace ValheimRelay.Plugin
             _chatFallbackEnabled = chatFallbackEnabled ?? (() => true);
         }
 
-        public bool IsReady => _registered && ZRoutedRpc.instance != null;
+        public bool IsReady
+        {
+            get
+            {
+                if (!_registered) return false;
+                try
+                {
+                    return HasRouter();
+                }
+                catch (Exception)
+                {
+                    return false;
+                }
+            }
+        }
 
         /// <summary>True once a peer has answered over RPC, so §6 is settled for this session.</summary>
         public bool RpcWorks => _rpcAcknowledged;
@@ -60,17 +76,25 @@ namespace ValheimRelay.Plugin
 
             try
             {
-                var rpc = ZRoutedRpc.instance;
-                if (rpc == null)
+                if (!RegisterHandlers())
                 {
                     _log.Warn("no ZRoutedRpc yet; the code channel will register later");
                     return;
                 }
 
-                rpc.Register<string, long>(RpcAnnounce, OnRpcAnnounce);
-                rpc.Register(RpcRequest, OnRpcRequest);
                 _registered = true;
-                _log.Info("code channel registered");
+
+                if (EverybodyFromGame)
+                {
+                    _log.Info("code channel registered");
+                }
+                else
+                {
+                    _log.Warn(
+                        "code channel registered, but this build has no readable ZRoutedRpc.Everybody, so the "
+                        + "broadcast target is assumed to be " + EverybodyFallback + ". If peers never see each "
+                        + "other's codes, this is the first thing to check against the current game version.");
+                }
             }
             catch (Exception ex)
             {
@@ -102,7 +126,7 @@ namespace ValheimRelay.Plugin
         {
             try
             {
-                ZRoutedRpc.instance?.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcRequest);
+                SendRequestRpc();
             }
             catch (Exception ex)
             {
@@ -121,7 +145,7 @@ namespace ValheimRelay.Plugin
 
             try
             {
-                ZRoutedRpc.instance?.InvokeRoutedRPC(ZRoutedRpc.Everybody, RpcAnnounce, code, epoch);
+                SendAnnounceRpc(code, epoch);
             }
             catch (Exception ex)
             {
@@ -132,6 +156,121 @@ namespace ValheimRelay.Plugin
             {
                 SendChat(ChatPrefix + " " + code + " " + epoch.ToString(CultureInfo.InvariantCulture));
             }
+        }
+
+        // ------------------------------------------------- the game's RPC router
+
+        /// <summary>
+        /// Every call below is isolated behind its own <see cref="MethodImplOptions.NoInlining"/>
+        /// method, and every caller wraps the call in a try/catch. That looks
+        /// like ceremony and is not.
+        /// <para>
+        /// Mono resolves field and method tokens when it COMPILES a method, not
+        /// when it reaches the offending instruction, and it reports the failure
+        /// at the call site in the caller rather than inside the callee. So a
+        /// try/catch wrapped around a renamed game symbol in the SAME method
+        /// never runs — the method throws on entry, before its catch block is
+        /// live. That is how a missing <c>ZRoutedRpc.Everybody</c> escaped this
+        /// file's existing handlers, propagated out of the
+        /// <c>Player.OnSpawned</c> postfix, and aborted <c>Game.SpawnPlayer</c>
+        /// mid-spawn — leaving the game in an endless respawn loop.
+        /// </para>
+        /// <para>
+        /// Splitting each game touch into its own uninlinable method moves that
+        /// compile-time failure to a call instruction that IS inside a try
+        /// block. NoInlining is load-bearing: inline the helper back into its
+        /// caller and the failure moves back up to the caller's entry with it.
+        /// </para>
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool HasRouter() => ZRoutedRpc.instance != null;
+
+        /// <summary>False when there is no router yet, so the caller can try again later.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private bool RegisterHandlers()
+        {
+            var rpc = ZRoutedRpc.instance;
+            if (rpc == null) return false;
+
+            rpc.Register<string, long>(RpcAnnounce, OnRpcAnnounce);
+            rpc.Register(RpcRequest, OnRpcRequest);
+            return true;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void SendRequestRpc()
+            => ZRoutedRpc.instance?.InvokeRoutedRPC(EverybodyPeer, RpcRequest);
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void SendAnnounceRpc(string code, long epoch)
+            => ZRoutedRpc.instance?.InvokeRoutedRPC(EverybodyPeer, RpcAnnounce, code, epoch);
+
+        /// <summary>
+        /// The "route this to every peer" target id.
+        /// <para>
+        /// Looked up rather than referenced, because the compile-time reference
+        /// to <c>ZRoutedRpc.Everybody</c> is exactly what a game update broke:
+        /// the field moved and every client running this mod dropped into an
+        /// endless respawn loop. A reflected lookup degrades to the documented
+        /// sentinel instead of taking the game down with it.
+        /// </para>
+        /// </summary>
+        private static readonly long EverybodyPeer;
+
+        /// <summary>False when <see cref="EverybodyPeer"/> is the fallback rather than the build's own value.</summary>
+        private static readonly bool EverybodyFromGame;
+
+        static GameCodeChannel()
+        {
+            EverybodyPeer = ResolveEverybody(out var fromGame);
+            EverybodyFromGame = fromGame;
+        }
+
+        /// <summary>
+        /// Zero is what "everybody" has been for the life of the game, so it is
+        /// the fallback — but it is a guess, and a guess that silently routes
+        /// every announcement to one peer would look like the channel simply not
+        /// working. <see cref="Register"/> says so in the log when it is used.
+        /// </summary>
+        private const long EverybodyFallback = 0L;
+
+        private static long ResolveEverybody(out bool fromGame)
+        {
+            fromGame = false;
+
+            try
+            {
+                const BindingFlags anyStatic =
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy;
+
+                // A field first (what it has always been), then a property, in
+                // case the build turned it into one.
+                object? raw = typeof(ZRoutedRpc).GetField("Everybody", anyStatic)?.GetValue(null)
+                    ?? typeof(ZRoutedRpc).GetProperty("Everybody", anyStatic)?.GetValue(null);
+
+                if (raw == null) return EverybodyFallback;
+
+                // Converted rather than cast: the width of the id is not the
+                // part worth being strict about.
+                if (raw is long value)
+                {
+                    fromGame = true;
+                    return value;
+                }
+
+                if (raw is IConvertible convertible)
+                {
+                    fromGame = true;
+                    return convertible.ToInt64(CultureInfo.InvariantCulture);
+                }
+            }
+            catch (Exception)
+            {
+                // Nothing here can log: this runs from a static initialiser,
+                // before any instance exists. Register reports it instead.
+            }
+
+            return EverybodyFallback;
         }
 
         // ---------------------------------------------------------------- RPC
@@ -184,14 +323,20 @@ namespace ValheimRelay.Plugin
         {
             try
             {
-                var player = Player.m_localPlayer;
-                if (player == null) return;
-                Chat.instance?.SendText(Talker.Type.Normal, message);
+                SendChatLine(message);
             }
             catch (Exception ex)
             {
                 _log.Warn("could not send on the chat channel: " + ex.Message);
             }
+        }
+
+        /// <summary>Isolated for the reason given on <see cref="HasRouter"/>.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void SendChatLine(string message)
+        {
+            if (Player.m_localPlayer == null) return;
+            Chat.instance?.SendText(Talker.Type.Normal, message);
         }
 
         private void Raise(string code, long epoch, long sender)

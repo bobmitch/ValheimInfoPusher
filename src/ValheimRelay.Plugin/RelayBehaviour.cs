@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using UnityEngine;
 using ValheimRelay.Core.Identity;
 using ValheimRelay.Core.Protocol;
@@ -27,6 +28,8 @@ namespace ValheimRelay.Plugin
         private RelayPanel _panel = null!;
 
         private bool _sessionRunning;
+        private bool _dormant;
+        private int _failures;
         private float _discoveryDeadline;
         private bool _fallbackConsidered;
         private bool _pingSenderWarned;
@@ -40,6 +43,20 @@ namespace ValheimRelay.Plugin
         /// player's — the point is a run of them with none of our own.
         /// </summary>
         private const int PingRejectionsBeforeWarning = 3;
+
+        /// <summary>
+        /// How many failures on the per-frame paths before the mod gives up and
+        /// goes dormant for the rest of the run.
+        /// <para>
+        /// Small on purpose. A fault on a path that runs every frame — and
+        /// <c>OnGUI</c> runs several times per frame — is not going to fix
+        /// itself, and continuing to throw costs the player far more than the
+        /// mod is worth: a stack trace per frame written to console and disk
+        /// will drag the game to a standstill on its own. A few attempts is
+        /// enough to rule out a one-off during a load.
+        /// </para>
+        /// </summary>
+        private const int FailuresBeforeDormant = 5;
 
         public RelaySession? Session => _session;
 
@@ -163,6 +180,7 @@ namespace ValheimRelay.Plugin
         /// <summary>Called once the world is loaded and there is a local player.</summary>
         public void StartSession()
         {
+            if (_dormant) return;
             if (_sessionRunning) return;
             if (!_plugin.Settings.Enabled.Value) return;
             if (!GameBridge.IsWorldLoaded || !GameBridge.HasLocalPlayer) return;
@@ -210,6 +228,30 @@ namespace ValheimRelay.Plugin
         }
 
         private void Update()
+        {
+            if (_dormant) return;
+
+            try
+            {
+                Pump();
+                _failures = 0;
+            }
+            catch (Exception ex)
+            {
+                NoteFailure("the per-frame update", ex);
+            }
+        }
+
+        /// <summary>
+        /// The body of <c>Update</c>, split out so that a game symbol this mod
+        /// can no longer resolve throws at the call above — inside its try —
+        /// rather than on entry to <c>Update</c> itself, which is outside every
+        /// handler this class has. Mono decides that at compile time and reports
+        /// it at the caller's call site, so NoInlining is what keeps the two
+        /// methods distinct enough for the handler to see it.
+        /// </summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void Pump()
         {
             // Ahead of the session check: a ping pin that outlived its session
             // would otherwise sit on the map until the world unloaded.
@@ -276,7 +318,75 @@ namespace ValheimRelay.Plugin
             _session!.SubmitPosition(sample);
         }
 
-        private void OnGUI() => _panel.Draw();
+        private void OnGUI()
+        {
+            if (_dormant) return;
+
+            try
+            {
+                DrawPanel();
+            }
+            catch (Exception ex)
+            {
+                NoteFailure("the panel", ex);
+            }
+        }
+
+        /// <summary>Split out for the reason given on <see cref="Pump"/>.</summary>
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void DrawPanel() => _panel.Draw();
+
+        /// <summary>
+        /// Counts a failure on a per-frame path and, once they stop looking like
+        /// bad luck, shuts the mod down for the rest of the run.
+        /// <para>
+        /// Going dormant is the whole point. The alternative — throwing again on
+        /// the next frame, and the one after — is what turns "the map feature is
+        /// broken" into "the game is unplayable", and it buries the one stack
+        /// trace that says why under thousands of copies of itself. One report,
+        /// then silence, then nothing.
+        /// </para>
+        /// </summary>
+        private void NoteFailure(string where, Exception ex)
+        {
+            try
+            {
+                if (++_failures < FailuresBeforeDormant)
+                {
+                    if (_failures == 1) _plugin.Log.Error("ValheimRelay hit an error in " + where + ": " + ex);
+                    return;
+                }
+
+                _dormant = true;
+                _plugin.Log.Error(
+                    "ValheimRelay has failed " + _failures + " times in " + where + " and is shutting itself "
+                    + "down for the rest of this session. The game is unaffected; the map will not update. "
+                    + "This usually means the game has updated and the mod needs a rebuild. Last error: " + ex);
+
+                GoDormant();
+            }
+            catch (Exception)
+            {
+                // Never throw out of the failure handler: this runs from Update
+                // and OnGUI, and a throw here is the thing it exists to prevent.
+                _dormant = true;
+            }
+        }
+
+        /// <summary>
+        /// Puts everything down as gently as it can. Each step is separate,
+        /// because the reason we are here is that something in this chain
+        /// throws, and the later steps are worth attempting anyway.
+        /// </summary>
+        private void GoDormant()
+        {
+            try { StopSession("the mod shut itself down"); } catch (Exception) { }
+            try { ClearPins(); } catch (Exception) { }
+            try { _bridge.ClearPings(); } catch (Exception) { }
+            try { _panel.Release(); } catch (Exception) { }
+            try { _session?.Dispose(); } catch (Exception) { }
+            _session = null;
+        }
 
         // -------------------------------------------------------------- events
 
