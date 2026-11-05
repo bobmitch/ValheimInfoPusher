@@ -1,16 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
 - Steam achievements keep working with the mod installed, so no separate
   achievements mod is needed. Only Valheim's "modded" rule is lifted;
   devcommands, cheat world modifiers and spawned items still switch
   achievements off. `KeepAchievements` (on by default) turns it off.
 
-## 0.1.0 — unreleased
+## 0.1.1
 
-First working build. Not yet verified in-game (see the repository README for
-what M0 still has to settle).
+First release.
 
 - Session lifecycle: create, join, reclaim after a crash, and rotate when the
   creator leaves for good.
