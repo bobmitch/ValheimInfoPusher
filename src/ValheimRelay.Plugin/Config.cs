@@ -52,6 +52,13 @@ namespace ValheimRelay.Plugin
             AnnounceInChat = file.Bind("General", "AnnounceInChat", true,
                 "Print the session code in chat when the session starts. Local only — other players do not see it.");
 
+            KeepAchievements = file.Bind("General", "KeepAchievements", true,
+                "Keep Steam achievements working with mods installed. Valheim treats any modded game as cheated, "
+                + "and BepInEx marks every game as modded, so without this no achievement counts while BepInEx is "
+                + "installed. Only that one rule is lifted: devcommands, world modifiers and spawned items still "
+                + "switch achievements off exactly as they would in an unmodded game. No separate achievements mod "
+                + "is needed, and having one as well does no harm.");
+
             // First in the section on purpose: it is the answer to the question
             // most people open this file with, and reading it first tells you
             // that the toggles under it are the fine-grained version of it.
@@ -116,6 +123,7 @@ namespace ValheimRelay.Plugin
         public ConfigEntry<string> RelayUrl { get; }
         public ConfigEntry<string> MapUrl { get; }
         public ConfigEntry<bool> AnnounceInChat { get; }
+        public ConfigEntry<bool> KeepAchievements { get; }
         public ConfigEntry<bool> ShareMyPosition { get; }
         public ConfigEntry<bool> ShareHealth { get; }
         public ConfigEntry<bool> StreamerMode { get; }

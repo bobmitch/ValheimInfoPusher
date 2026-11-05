@@ -23,6 +23,47 @@ so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
 inbound (§4 markers, pings) and the whole point of the outbound stream are
 consequently unverified end to end: the mod sends, and nothing is reading.
 
+## Achievements (Valheim 1.0)
+
+Valheim 1.0 counts a modded game as a cheated one: `Achievements.IsCheatedAtAll`
+answers true whenever `Game.isModded` is set, and every achievement stat write
+goes through `Achievements.CanGetAchievements`, which refuses while it does.
+BepInEx's chainloader sets that flag itself on every launch, so the loader
+alone switches achievements off. Players have been fixing this with a separate
+mod (IsModded, AchievementEnabler, ModdedWithAchievements). With
+[`KeepAchievementsPatch`](src/ValheimRelay.Plugin/Patches/AchievementPatches.cs),
+this mod no longer needs one.
+
+It is deliberately narrow. A transpiler swaps the one `ldsfld Game::isModded` in
+`IsCheatedAtAll` for a call that answers false while `KeepAchievements` is on.
+Every other rule in that method is still the game's own: devcommands on the
+character, cheat world modifiers and cheated items all still block
+achievements.
+
+**Why not flip the flag, as the standalone mods do?** Clearing `Game.isModded`
+in a prefix and restoring it in a postfix writes a flag Iron Gate asked mods to
+set for support triage. It also does not compose. Harmony runs postfixes in
+prefix order, not in reverse, so with two such mods the second restore puts back
+the `false` the first one wrote, and the game is left believing it is unmodded.
+The transpiler never writes the flag, so the main menu still says "modded". It
+is harmless alongside any of those mods: IsModded reaches the same answer, and
+AchievementEnabler replaces the method's result outright.
+
+It fails soft like the chat patches. `Achievements` is looked up by name in the
+game's assembly, so a dedicated server on a pre-1.0 build skips the patch
+instead of losing `PatchAll`. A build whose `IsCheatedAtAll` no longer reads
+the flag gets one warning and an untouched method. The setting is read on
+every call, so turning it off takes effect without a restart.
+
+**Not verified in a game.** Nothing in CI compiles the plugin. The patch was
+compiled out of band, together with the real `Config.cs`, against stub game
+types that copy the published decompile of `IsCheatedAtAll`, using the same
+HarmonyX version, and run under Mono. That run covered the vanilla rules, the
+live toggle, both kinds of coexisting mod, and the flag-flip ordering claim
+above. The first in-game check: look for the `achievements:` line in
+`LogOutput.log`, which says the patch applied, then earn an early achievement on
+a fresh character and watch for the Steam toast.
+
 ## Ping capture (§3.3, outbound)
 
 A ping made in game is forwarded to the room, so it appears on every browser

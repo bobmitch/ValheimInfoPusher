@@ -38,6 +38,21 @@ unmodded players in the world will see one short `[vrelay]` line when the code i
 shared. This note will be replaced with a definite answer once it is measured on
 a vanilla server.
 
+## Achievements still work
+
+Valheim switches Steam achievements off for any modded game, and BepInEx marks
+every game as modded, so normally installing any mod at all costs you your
+achievements. This mod lifts that one rule. **You do not need a separate
+achievements mod**, and having one installed as well does no harm.
+
+It removes only the "modded" rule. Using devcommands on a character, playing a
+world with cheat modifiers, or carrying spawned items still switches
+achievements off, exactly as in an unmodded game. The main menu still shows
+that the game is modded.
+
+`KeepAchievements = false` gives the game its own rule back. So does
+`Enabled = false`, which turns the whole mod off.
+
 ## Privacy — worth thirty seconds
 
 **The code is the credential.** Anyone holding it can watch every player in the
@@ -89,6 +104,7 @@ Everything is defaulted; a fresh install needs no edits.
 | `RelayUrl` | `wss://valheimrelay.bobmitch.com/ws` | Relay address. Leave it alone unless you run your own |
 | `MapUrl` | `https://bobmitch.com/valheim` | The map the copy button links to. Clear it to copy the bare code |
 | `AnnounceInChat` | `true` | Print the code in chat when a session starts (local only) |
+| `KeepAchievements` | `true` | Being modded no longer switches Steam achievements off. Cheats still do |
 | `ShareMyPosition` | `true` | Broadcast your position |
 | `ShareHealth` | `true` | Include health |
 | `StreamerMode` | `false` | One-way: viewers see you, nothing they do reaches your game |
