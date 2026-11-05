@@ -16,7 +16,7 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M4 — inbound markers and pings | Pings from a map now arrive in-game. The first one landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead. Markers still unverified |
 | M4b — outbound ping capture | **Code complete, never run in a game.** A ping made in game now reaches the room, closing §3.3's other direction. See below |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
-| M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip; never uploaded |
+| M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip; 0.1.1 is published there |
 
 **The web map does not exist yet.** Only the mod and the relay have been built,
 so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
