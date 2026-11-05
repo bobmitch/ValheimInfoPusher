@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.2
 
 - Steam achievements keep working with the mod installed, so no separate
   achievements mod is needed. Only Valheim's "modded" rule is lifted;
