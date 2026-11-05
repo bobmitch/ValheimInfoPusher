@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Steam achievements keep working with the mod installed, so no separate
+  achievements mod is needed. Only Valheim's "modded" rule is lifted;
+  devcommands, cheat world modifiers and spawned items still switch
+  achievements off. `KeepAchievements` (on by default) turns it off.
+
 ## 0.1.0 — unreleased
 
 First working build. Not yet verified in-game (see the repository README for
