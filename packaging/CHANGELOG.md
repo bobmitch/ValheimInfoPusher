@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.3
+
+- Fixed the panel sometimes staying on "looking for a session" for ever,
+  mostly on dedicated servers. If no session code arrives from another player
+  within about 15 seconds, the mod now starts a session itself.
+- While it is looking, the panel says what it is waiting for.
+
 ## 0.1.2
 
 - Steam achievements keep working with the mod installed, so no separate

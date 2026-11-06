@@ -122,6 +122,11 @@ Everything is defaulted; a fresh install needs no edits.
 session left, and the session was rebuilt under a new code. The mod tells you in
 chat when this happens; paste the new code into the map.
 
+**The panel says "looking for a session".** For the first few seconds after you
+load in, the mod checks whether another player already has a session. If nobody
+does, it starts one itself within about 15 seconds. If it stays on this for
+longer, update the mod: before 0.1.3 it could wait for ever on a dedicated server.
+
 **"This session is full."** Sixteen players is the limit. The panel has a retry
 button for when someone leaves.
 

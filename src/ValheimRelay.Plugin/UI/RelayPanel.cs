@@ -101,6 +101,16 @@ namespace ValheimRelay.Plugin
             if (_code == null)
             {
                 GUILayout.Label(DescribeState(_state));
+
+                // The panel updates in place, but a status that sits unchanged
+                // for a few seconds reads as stuck. Say what the wait is for.
+                if (_state == SessionState.Discovering)
+                {
+                    GUILayout.Label(
+                        "Checking whether anyone here already has a session — this takes a few "
+                        + "seconds. If nobody does, a new one starts by itself.",
+                        _noteStyle);
+                }
             }
             else
             {

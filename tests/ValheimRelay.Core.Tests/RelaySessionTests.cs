@@ -181,21 +181,74 @@ namespace ValheimRelay.Core.Tests
         }
 
         [Fact]
-        public void ANonElectedClientWaitsInDiscoveryInsteadOfCreating()
+        public void ANonElectedClientLetsTheElectedOneGoFirst()
         {
             _peers.SelfPeerId = 50;
             _peers.Peers.Add(10);
 
             _session.Start(Identity());
-            Tick(30);
+            Tick(6);
+            Tick(5);
 
             Assert.Empty(_transport.Connects);
             Assert.Equal(SessionState.Discovering, _session.State);
         }
 
         [Fact]
+        public void ANonElectedClientCreatesAnywayWhenNobodyElseDoes()
+        {
+            // A dedicated server: the client's only peer is the server, which
+            // never creates. When the server's id sorted lower, the client sat
+            // on "looking for a session" for ever.
+            _peers.SelfPeerId = 50;
+            _peers.Peers.Add(10);
+
+            _session.Start(Identity());
+            Tick(11.9);
+            Assert.Empty(_transport.Connects);
+
+            Tick(0.2);
+            var attempt = Assert.Single(_transport.Connects);
+            Assert.Null(attempt.Code);
+            Assert.Equal(SessionState.Creating, _session.State);
+        }
+
+        [Fact]
+        public void ANonElectedClientJoinsTheElectedCreatorsCodeInsteadOfCreating()
+        {
+            _peers.SelfPeerId = 50;
+            _peers.Peers.Add(10);
+
+            _session.Start(Identity());
+            Tick(8);
+            _channel.PeerAnnounces("ELECTED1", epoch: 1);
+            Tick();
+            Tick(10);
+
+            var attempt = Assert.Single(_transport.Connects);
+            Assert.Equal("ELECTED1", attempt.Code);
+        }
+
+        [Fact]
+        public void TheUnelectedWaitCannotBeConfiguredBelowTheElectedCreatorsWorstCase()
+        {
+            var options = new SessionOptions
+            {
+                DiscoveryWindow = TimeSpan.FromSeconds(5),
+                CreationStaggerSpread = TimeSpan.FromSeconds(3),
+                UnelectedCreateAfter = TimeSpan.FromSeconds(2)
+            };
+
+            options.Normalise();
+
+            Assert.Equal(TimeSpan.FromSeconds(8), options.UnelectedCreateAfter);
+        }
+
+        [Fact]
         public void AWaitingClientReAsksForTheCodeOnTheSlowTimer()
         {
+            // Long enough that the fallback create does not end the waiting.
+            _options.UnelectedCreateAfter = TimeSpan.FromSeconds(60);
             _peers.SelfPeerId = 50;
             _peers.Peers.Add(10);
 
