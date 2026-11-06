@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.3
 
 - Fixed the panel sometimes staying on "looking for a session" for ever,
   mostly on dedicated servers. If no session code arrives from another player
