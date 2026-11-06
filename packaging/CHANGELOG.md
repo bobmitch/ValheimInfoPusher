@@ -4,7 +4,7 @@
 
 - Fixed the panel sometimes staying on "looking for a session" for ever,
   mostly on dedicated servers. If no session code arrives from another player
-  within about 12 seconds, the mod now starts a session itself.
+  within about 15 seconds, the mod now starts a session itself.
 - While it is looking, the panel says what it is waiting for.
 
 ## 0.1.2
