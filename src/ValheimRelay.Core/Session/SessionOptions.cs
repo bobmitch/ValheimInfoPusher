@@ -32,6 +32,26 @@ namespace ValheimRelay.Core.Session
         /// </summary>
         public TimeSpan CreationStaggerSpread { get; set; } = TimeSpan.FromSeconds(3);
 
+        /// <summary>
+        /// How long a client that was NOT elected creator waits for a code before
+        /// creating a room anyway (plus its stagger), measured from entering
+        /// discovery.
+        /// <para>
+        /// The election can only see game peers, not which of them run the mod.
+        /// On a dedicated server a client's only peer is the server itself, which
+        /// never creates — so without this, any client whose id happened to sort
+        /// above the server's waited in discovery for ever. The same happens when
+        /// the elected player is a host without the mod. The election still
+        /// decides who goes first; this only stops it being a gate. Duplicate
+        /// rooms this produces are merged by the code tiebreak (§5.1).
+        /// </para>
+        /// <para>
+        /// Must exceed the elected creator's worst case — the window, its
+        /// stagger, connecting and announcing — or non-elected clients race it.
+        /// </para>
+        /// </summary>
+        public TimeSpan UnelectedCreateAfter { get; set; } = TimeSpan.FromSeconds(12);
+
         /// <summary>§5.1 step 3: a non-creator re-asks on this timer.</summary>
         public TimeSpan DiscoveryRetryInterval { get; set; } = TimeSpan.FromSeconds(10);
 
@@ -96,6 +116,8 @@ namespace ValheimRelay.Core.Session
         {
             if (PositionInterval < TimeSpan.FromSeconds(0.5)) PositionInterval = TimeSpan.FromSeconds(0.5);
             if (DiscoveryWindow < TimeSpan.FromSeconds(1)) DiscoveryWindow = TimeSpan.FromSeconds(1);
+            var electedWorstCase = DiscoveryWindow + CreationStaggerSpread;
+            if (UnelectedCreateAfter < electedWorstCase) UnelectedCreateAfter = electedWorstCase;
             if (RequestStateCooldown < TimeSpan.FromSeconds(1)) RequestStateCooldown = TimeSpan.FromSeconds(1);
             if (HelloInterval < TimeSpan.FromSeconds(10)) HelloInterval = TimeSpan.FromSeconds(10);
             if (PositionKeepalive < PositionInterval) PositionKeepalive = PositionInterval;

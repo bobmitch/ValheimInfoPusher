@@ -271,15 +271,19 @@ namespace ValheimRelay.Core.Session
             var reclaimEntry = _identity?.World.Uid is string worldUid ? _reclaim.Get(worldUid) : null;
             var elected = CreatorElection.IsElectedCreator(_peers);
 
+            // The elected creator goes first. Everyone else keeps listening and
+            // re-asking for longer, but not for ever: the peer the election
+            // picked may be a dedicated server or a player without the mod, and
+            // neither will ever create. See SessionOptions.UnelectedCreateAfter.
+            var waitBeforeCreating = elected ? _options.DiscoveryWindow : _options.UnelectedCreateAfter;
+            var stagger = CreatorElection.CreationStagger(_peers, _options.CreationStaggerSpread);
+            if (now - _stateEnteredAt < waitBeforeCreating + stagger) return;
+
             if (!elected)
             {
-                // Someone else is creating; keep listening and re-ask on the slow
-                // timer. Staying in Discovering is the whole mechanism here.
-                return;
+                _log.Info("no session code heard after " + waitBeforeCreating.TotalSeconds
+                    + "s and the elected peer has not created one; creating a session");
             }
-
-            var stagger = CreatorElection.CreationStagger(_peers, _options.CreationStaggerSpread);
-            if (now - _stateEnteredAt < _options.DiscoveryWindow + stagger) return;
 
             if (reclaimEntry != null)
             {
