@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using ValheimRelay.Core.Json;
@@ -80,6 +81,59 @@ namespace ValheimRelay.Core.Tests
             Assert.Equal(FogEncodings.Rle, encoding);
             Assert.True(data.Length <= 8, "a solid tile should be a zero run and one long run, not " + data);
             Assert.All(Decode(encoding, data), Assert.True);
+        }
+
+        /// <summary>
+        /// Valheim 1.0 keeps <c>Minimap.m_explored</c> as a <c>BitArray</c>, not
+        /// the <c>bool[]</c> 0.221 had, with the same <c>y · size + x</c> index
+        /// order. A tile encoded from either container must be byte-identical,
+        /// or a 1.0 player's fog would land in the wrong place on the map.
+        /// </summary>
+        [Fact]
+        public void ABitArrayEncodesExactlyAsTheBoolArrayItReplaced()
+        {
+            const int size = 512;
+            var array = new bool[size * size];
+            for (var i = 0; i < array.Length; i++)
+            {
+                // A blob plus a noisy band, so both encodings are exercised.
+                var x = i % size;
+                var y = i / size;
+                array[i] = ((x - 200) * (x - 200)) + ((y - 300) * (y - 300)) < 90 * 90
+                    || (y > 40 && y < 60 && ((x * 7) + (y * 3)) % 5 == 0);
+            }
+            var bits = new BitArray(array);
+
+            var tiles = 0;
+            for (var tz = 0; tz < FogTiles.TilesPerSide(size); tz++)
+            for (var tx = 0; tx < FogTiles.TilesPerSide(size); tx++)
+            {
+                var fromArray = _encoder.TryEncode(array, size, tx, tz, out var e1, out var d1);
+                var fromBits = _encoder.TryEncode(bits, size, tx, tz, out var e2, out var d2);
+                Assert.Equal(fromArray, fromBits);
+                Assert.Equal(e1, e2);
+                Assert.Equal(d1, d2);
+                if (fromArray) tiles++;
+            }
+            Assert.True(tiles >= 2, "the pattern should touch several tiles");
+        }
+
+        [Fact]
+        public void ExploredCellsWrapsBothGameContainersAndNothingElse()
+        {
+            Assert.True(ExploredCells.TryWrap(new bool[16], out var fromArray));
+            Assert.Equal(16, fromArray.Length);
+            Assert.True(ExploredCells.TryWrap(new BitArray(16), out var fromBits));
+            Assert.Equal(16, fromBits.Length);
+
+            // Anything else is a build this does not know, and is refused rather
+            // than guessed at: the plugin logs it and fog stays off.
+            Assert.False(ExploredCells.TryWrap(new byte[16], out _));
+            Assert.False(ExploredCells.TryWrap(null, out _));
+
+            Assert.True(new FogMap(new BitArray(64 * 64), 64, 12, 100).IsValid);
+            Assert.False(new FogMap(new BitArray(100), 64, 12, 100).IsValid);
+            Assert.False(new FogMap(default(ExploredCells), 64, 12, 100).IsValid);
         }
 
         /// <summary>
@@ -207,10 +261,15 @@ namespace ValheimRelay.Core.Tests
         public bool Available { get; set; } = true;
         public bool Throws { get; set; }
 
+        /// <summary>Hand the map over as Valheim 1.0 holds it: a <c>BitArray</c>.</summary>
+        public bool AsBitArray { get; set; }
+
         public bool TryGetFogMap(out FogMap map)
         {
             if (Throws) throw new MissingFieldException("Minimap", "m_explored");
-            map = new FogMap(Explored, Size, MetresPerPixel, RevealRadius);
+            map = AsBitArray
+                ? new FogMap(new BitArray(Explored), Size, MetresPerPixel, RevealRadius)
+                : new FogMap(Explored, Size, MetresPerPixel, RevealRadius);
             return Available;
         }
 
@@ -324,6 +383,28 @@ namespace ValheimRelay.Core.Tests
 
             var hello = Assert.Single(_transport.SentOfType(FrameTypes.Hello));
             Assert.Equal(100, hello["fog"]["r"].AsDouble());
+        }
+
+        /// <summary>
+        /// The regression: on Valheim 1.0 the explored map is a BitArray, and a
+        /// source that could only hand over a bool[] left fog off for good --
+        /// hello carried no <c>fog</c>, so every map said nobody was sharing.
+        /// </summary>
+        [Fact]
+        public void AValheim10BitArrayMapIsAdvertisedAndSnapshotsExactly()
+        {
+            _source.AsBitArray = true;
+            _source.Reveal(0, 0, 1000);
+            _source.Reveal(-2000, 1500, 300);
+            StartActive();
+
+            var hello = Assert.Single(_transport.SentOfType(FrameTypes.Hello));
+            Assert.Equal(100, hello["fog"]["r"].AsDouble());
+
+            RequestFog();
+            Run(5);
+            Assert.NotEmpty(FogFrames());
+            Assert.Equal(_source.Explored, Reassemble(FogFrames()));
         }
 
         [Fact]

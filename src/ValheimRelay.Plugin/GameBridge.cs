@@ -1259,9 +1259,14 @@ namespace ValheimRelay.Plugin
                 // a warning, which would claim fog is unavailable for good.
                 if (value == null) return false;
 
-                if (value is not bool[] explored)
+                // A bool[] before Valheim 1.0, a BitArray from 1.0 on (1.0.7's
+                // Minimap.Awake: new BitArray(m_textureSize * m_textureSize)).
+                // Both are indexed y * size + x, so only the container changed.
+                // Requiring bool[] here is what silently turned fog off on 1.0.
+                if (!ExploredCells.TryWrap(value, out var explored))
                 {
-                    LogFogUnavailable("Minimap.m_explored is not a bool[] on this build");
+                    LogFogUnavailable("Minimap.m_explored is a " + value.GetType().FullName
+                        + " on this build, not a bool[] or a BitArray");
                     return false;
                 }
 

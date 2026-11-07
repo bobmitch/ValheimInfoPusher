@@ -5,11 +5,12 @@ namespace ValheimRelay.Core.Session
 {
     /// <summary>
     /// The live explored map, as the game holds it (§3.7). A view, not a copy:
-    /// <see cref="Explored"/> is the game's own array, read on the main thread.
+    /// <see cref="Explored"/> wraps the game's own container -- a <c>bool[]</c>
+    /// before Valheim 1.0, a <c>BitArray</c> after -- read on the main thread.
     /// </summary>
     public readonly struct FogMap
     {
-        public FogMap(bool[] explored, int size, double metresPerPixel, double revealRadius)
+        public FogMap(ExploredCells explored, int size, double metresPerPixel, double revealRadius)
         {
             Explored = explored;
             Size = size;
@@ -18,7 +19,7 @@ namespace ValheimRelay.Core.Session
         }
 
         /// <summary>One cell per map pixel, index <c>cy · size + cx</c>.</summary>
-        public bool[] Explored { get; }
+        public ExploredCells Explored { get; }
 
         /// <summary>Map texture size in cells. 2048 unmodded — read it off the live instance, never assume it.</summary>
         public int Size { get; }
@@ -35,7 +36,7 @@ namespace ValheimRelay.Core.Session
         /// <see cref="Size"/> and a mismatch would throw on the main thread.
         /// </summary>
         public bool IsValid =>
-            Explored != null
+            !Explored.IsNull
             && Size > 0
             && Size <= FogTiles.MaxMapSize
             && Explored.Length == Size * Size

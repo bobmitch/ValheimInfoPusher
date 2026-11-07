@@ -149,6 +149,12 @@ the wire contract; this is what the mod does with it.
   `hello`.
 - **Fails soft.** The four `Minimap` fields are looked up by name. If one has
   moved, fog is not shared and one warning is logged; nothing else is affected.
+- **Both game containers.** Valheim 0.221 keeps `m_explored` as a `bool[]` and
+  1.0 as a `System.Collections.BitArray` (same size, same `y · size + x`
+  order). `ExploredCells` reads either in place, without copying. The first
+  in-game run on 1.0.7 is how this was found: the plugin required `bool[]`,
+  logged `Minimap.m_explored is not a bool[] on this build`, and never put
+  `fog` in its hello, so the map said nobody was sharing.
 
 **Not verified in a game.** The encoder is checked against a reference decoder,
 and the scheduling against the session suite. The plugin's field reads were
