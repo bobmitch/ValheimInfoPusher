@@ -6,6 +6,8 @@
   can show what you have explored, filling in as you go. It sends only your
   own exploration, also works in No Map worlds, and stays off while
   `ShareMyPosition` is off. `FogInterval` (20 s) sets how often updates go out.
+  Works on Valheim 1.0, which stores the explored map differently from earlier
+  versions.
 
 ## 0.1.3
 

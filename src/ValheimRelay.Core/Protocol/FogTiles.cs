@@ -133,10 +133,15 @@ namespace ValheimRelay.Core.Protocol
         /// when the size is not a multiple of <see cref="FogTiles.TileSize"/> —
         /// are unexplored.
         /// </para>
+        /// <para>
+        /// <paramref name="explored"/> is the game's own container, a
+        /// <c>bool[]</c> before Valheim 1.0 and a <c>BitArray</c> after; see
+        /// <see cref="ExploredCells"/>.
+        /// </para>
         /// </summary>
-        public bool TryEncode(bool[] explored, int mapSize, int tx, int tz, out string encoding, out string data)
+        public bool TryEncode(ExploredCells explored, int mapSize, int tx, int tz, out string encoding, out string data)
         {
-            if (explored == null) throw new ArgumentNullException(nameof(explored));
+            if (explored.IsNull) throw new ArgumentNullException(nameof(explored));
 
             encoding = string.Empty;
             data = string.Empty;

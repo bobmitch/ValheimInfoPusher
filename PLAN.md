@@ -480,6 +480,12 @@ it from real save data for some time:
   That is the save format, not the wire format; §3.7 packs to bits or runs.
 - The save is the in-memory array written out in order, so `m_explored` read at
   runtime has the same layout.
+- **The container is not stable across game versions.** 0.221.12 declares
+  `m_explored` as `bool[]`; 1.0.7 declares it as `System.Collections.BitArray`
+  (`Minimap.Awake`: `new BitArray(m_textureSize * m_textureSize, false)`), read
+  and written as `m_explored[y * m_textureSize + x]`. Same size, same order. The
+  plugin wraps either in `ExploredCells`; anything else is refused with a log
+  line. `m_exploredOthers` changed the same way.
 
 **Still to confirm** against the build, as §4.3 asks for everything else:
 
