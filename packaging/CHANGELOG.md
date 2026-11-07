@@ -1,11 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.4
 
-- Fog of war on the web map. With `ShareMyFog` on (off by default), the map can
-  show what you have explored and watch it fill in as you go. It sends only
-  your own exploration, and turns off with `ShareMyPosition`. `FogInterval`
-  (20 s) sets how often updates go out.
+- Fog of war on the web map. Turn on `ShareMyFog` (off by default) and the map
+  can show what you have explored, filling in as you go. It sends only your
+  own exploration, also works in No Map worlds, and stays off while
+  `ShareMyPosition` is off. `FogInterval` (20 s) sets how often updates go out.
 
 ## 0.1.3
 
