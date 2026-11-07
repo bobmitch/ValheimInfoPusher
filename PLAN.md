@@ -244,7 +244,251 @@ As a belt-and-braces measure the mod also re-sends `hello` every 60 s.
 At 16 players × 1 Hz a `position` frame is roughly 130 bytes, so the room's
 steady-state is ~2 KB/s per map — comfortable. The 8192-byte cap only becomes a
 risk if someone adds a batched or array-valued frame later; if that day comes,
-split it rather than raising the limit.
+split it rather than raising the limit. §3.7 is the first such frame, and is
+split that way.
+
+### 3.7 Fog of war — `fog` and `request_fog`
+
+**Status: designed, not implemented.** Nothing in the mod sends these yet, and
+the game symbols this relies on (end of this section) have not been checked
+against a decompile.
+
+The map can show what each player has *revealed*, live, the way the in-game map
+shows it. Requested by a streamer, so viewers can watch the fog lift as the
+group explores. It is **opt-in per player** and off by default (see Privacy, at
+the end).
+
+#### Why this needs its own design
+
+A player's explored state is `Minimap.m_explored`: one bool per map pixel,
+2048 × 2048 at 12 m a pixel on an unmodded world. That is 512 KB as a packed
+bitmap, about 64 times the relay's 8192-byte frame cap (§1.5). So it is sent as
+**tiles**, each of which fits in one frame by construction.
+
+#### The grid
+
+| Symbol | Meaning                          | Unmodded value |
+|--------|----------------------------------|----------------|
+| `w`    | Map texture size, in pixels       | 2048           |
+| `px`   | World metres per pixel            | 12             |
+| `n`    | Tile edge, in pixels              | 128 (fixed)    |
+
+- Pixel `(cx, cy)` is centred on world `x = (cx − w/2) · px`,
+  `z = (cy − w/2) · px`. So `cx` increases eastward, `cy` northward, and pixel
+  `(w/2, w/2)` is the world origin.
+- Tile `(tx, tz)` covers pixels `cx ∈ [tx·n, tx·n + n)` and `cy ∈ [tz·n, tz·n + n)`.
+  At the unmodded size that is a 16 × 16 grid of tiles, each 1536 m on a side.
+- If `w` is not a multiple of `n`, the last row and column of tiles still have
+  `n × n` cells. Cells beyond the map are 0.
+- `w` and `px` go on every frame rather than being assumed. Mods that enlarge
+  the world change them, and the map should not need to know which mods are
+  installed.
+
+`n = 128` is chosen so the worst case fits. 128² bits is 2048 bytes, which is
+2732 bytes base64'd. With the frame's other fields that is well under 8192
+whatever the tile contains. At `n = 256` the uncompressed fallback would not
+fit.
+
+#### `fog` — mod → maps
+
+```json
+{ "type": "fog", "v": 1, "layer": "own", "w": 2048, "px": 12, "n": 128,
+  "tx": 9, "tz": 4, "enc": "rle", "d": "AIAB…" }
+```
+
+- **`layer`** is `own` or `shared`. `own` is `m_explored`, what this
+  character has seen itself. `shared` is `m_exploredOthers`, what it has picked
+  up from a cartography table. The game tints the two differently, and the map
+  may too. An absent or unrecognised `layer` reads as `own`.
+- **`d`** is the tile's `n × n` cells, row-major, in standard base64 with
+  padding. Row 0 is the southernmost row of the tile. Within a row, cell 0 is
+  the westernmost. A set cell means explored.
+- **`enc`** says how `d` is packed. The mod sends whichever of the two is
+  shorter:
+  - `rle`: run lengths, each an unsigned LEB128 varint, alternating
+    unexplored, explored, unexplored, … starting with an *unexplored* run, which
+    may be 0. The runs continue across row boundaries, so a solidly explored
+    region costs a few bytes whatever its size. The runs must sum to exactly
+    `n²`. A map that finds otherwise drops the frame.
+  - `bits`: `n²` bits, cell `i` in bit `i & 7` (least significant first) of
+    byte `i >> 3`. This is the fallback for tiles that defeat RLE, such as a
+    noisy fog edge. Without it a checkerboard tile would encode to 16 KB.
+
+  A map that does not recognise `enc` drops the frame. This leaves room to add
+  an encoding later without a protocol version bump.
+- No `playerId`: the relay stamps it (§1.3). No `uid`: the map maps `playerId`
+  to `uid` from `welcome` and `hello`, as it already does for `position` (§3.2).
+
+**A tile is merged with OR, never replaced.** Exploration only grows in game, so
+a map ORs every tile it receives into what it already holds for that `uid` and
+`layer`. That makes the frame idempotent and order-independent. A duplicate is
+harmless, a reordered pair converges, and a snapshot overlapping live updates
+needs no sequencing. It is also why tiles are sent whole rather than as lists of
+newly explored pixels. A lost pixel list is a hole the map never fills. A lost
+tile is fixed by the next send of that tile.
+
+#### `request_fog` — map → mods
+
+```json
+{ "type": "request_fog", "v": 1, "uid": "vh_7f3c9a21" }
+```
+
+This asks for a **snapshot**: every tile with at least one explored cell, both
+layers.
+
+- **`uid` is optional.** Present, it addresses one player: only the mod whose
+  `uid` matches answers. Absent, it addresses everyone. The relay broadcasts map
+  frames verbatim to every mod (§1.3), so the filtering happens in the mod.
+- A map sends an unaddressed `request_fog` after `welcome`, if it is showing fog
+  at all. A map that never shows fog never asks, and pays only for the small
+  live updates below.
+- After that, a map sends an addressed request whenever a `hello` with `fog`
+  (below) arrives from a `playerId` it has not yet requested a snapshot from.
+  That covers a player joining late, a player turning sharing on mid-session,
+  and a reconnect, since §1.2 gives a reconnect a new `playerId`. It is also how
+  frames lost when a connection drops get recovered. The mod needs no
+  delivery tracking of its own.
+- **Cooldown: one snapshot per mod per 30 s, coalesced as in §12.5.** A request
+  inside the window is answered once the window expires, not dropped. This also
+  holds while a snapshot is still being sent. A map that joins halfway through a
+  snapshot gets the rest of it now and a complete one later, and OR makes the
+  overlap free.
+
+**The relay cannot address one map.** A snapshot requested by one browser goes
+to every browser in the room. That is why the cooldown is six times §3.5's, and
+why addressed requests exist: one player reconnecting must not make the other
+fifteen resend everything.
+
+#### When the mod sends tiles
+
+1. **Live updates.** Every `FogInterval` (default 20 s, clamped to at least 5 s)
+   the mod sends each tile whose content has changed since this connection last
+   sent it. The mod sends these whenever sharing is on, whether or not any map
+   has asked.
+2. **Snapshots**, in answer to `request_fog`. Tiles nearest the player go first,
+   so the map fills in around wherever the stream is looking.
+3. **Nothing else.** In particular, nothing goes out on connect. The map asks.
+
+Tiles to send are held as a **set of tile keys**, `(layer, tx, tz)`, not as a
+queue of encoded frames. A tile is encoded when it is taken from the set, so it
+always carries the content current at send time. A tile queued twice is sent
+once. The set is bounded by the tile count (2 × 256 on an unmodded world), so
+unlike §12.10's reliable lane it cannot overflow and needs no drop policy.
+
+The set is the **lowest-priority** outbound lane. A fog frame goes out only when
+the reliable lane and the position slot are both empty, and at most one every
+100 ms. A snapshot never delays a marker, a ping or a position. Reading
+`m_explored` is main-thread work (§4.2), so encoding happens on the main thread,
+one tile per take.
+
+Which tiles changed is learned by patching the game's explore step (below): each
+reveal marks the tiles its circle overlaps. On the cartography table, or any
+other event that merges a whole map in, the mod marks every tile. Marking is
+cheap and over-marking is harmless, because a tile that comes out identical to
+what this connection last sent it as is skipped. On a new connection that record
+is cleared, since the map will ask for a snapshot anyway.
+
+#### `hello` carries the opt-in
+
+When sharing is on, `hello` (§3.1) carries:
+
+```json
+"fog": { "r": 100 }
+```
+
+The field is omitted when sharing is off, as `share` is (§12.6), so older maps
+see no change. It tells the map two things:
+
+- **This player shares fog.** Without that, the map cannot tell a player who
+  opted out from one who has not explored anything. The two need different
+  rendering: unknown vs. unexplored.
+- **`r`**, the reveal radius in metres, used for the next part.
+
+#### Making it look live: the map paints from `position`
+
+At a 20 s cadence the authoritative tiles lag what the player sees. The map
+closes that gap itself, at no wire cost. For a player whose `hello` carries
+`fog`, it paints the `own` layer with a disc of radius `r` around every
+`position` it receives. It joins consecutive positions with a capsule so a fast
+boat does not leave gaps. The next tile from the mod corrects any difference.
+Painting is an approximation; the tiles are the truth.
+
+Painting alone is not enough. It knows nothing explored before the session or
+before the map was opened, nothing from the cartography table, and nothing while
+§12.8's dead-band held positions back. Tiles alone are correct but late.
+Together, the map is right on load and moves with the player.
+
+#### What the map does with it
+
+- Store fog per `uid` and per `layer`. Not per `playerId`, which changes on
+  every reconnect.
+- When a `uid`'s `hello` arrives with a different `world.uid`, drop that `uid`'s
+  fog. It is a different world.
+- The display is the map's choice: union of every sharing player, one player,
+  or a toggle each. **A player without `fog` in their `hello` contributes
+  nothing.** Their area is unknown, not unexplored.
+
+#### Budget
+
+Estimates, to be replaced with measurements once there is something to measure.
+
+- A tile frame is ~130 bytes of fields plus `d`. A tile on the edge of explored
+  land should RLE to a few hundred bytes. A fully explored or empty tile is a
+  few bytes. The worst case is the `bits` fallback at ~2.9 KB, and that bound
+  is a hard one.
+- **Live:** a tile is 1.5 km across, so even a sailing player crosses at most a
+  couple of tiles in 20 s. That is roughly 50 bytes/s per moving player, a
+  fraction of their `position` traffic.
+- **Snapshot:** a well-explored late-game character might have 50–100 non-empty
+  tiles across both layers. That is perhaps 50–150 KB, delivered over 10–20 s at
+  the 100 ms pacing, to every map in the room.
+
+#### Game data, unconfirmed
+
+Check each of these against the build, as §4.3 asks for everything else.
+
+| Need                       | Expected source                                           |
+|----------------------------|-----------------------------------------------------------|
+| Own explored cells         | `Minimap.m_explored` (`bool[]`, index `cy · w + cx`)      |
+| Shared explored cells      | `Minimap.m_exploredOthers`                                |
+| `w`, `px`                  | `Minimap.m_textureSize`, `Minimap.m_pixelSize`            |
+| `r`                        | `Minimap.m_exploreRadius`                                 |
+| A reveal happened          | Postfix on `Minimap.Explore(Vector3, float)`              |
+| A whole map was merged in  | Postfix on `Minimap.AddSharedMapData`                     |
+
+The index layout is the one most likely to be wrong. If `m_explored` is not
+row-major with `cy` running north, the tile encoder transposes or flips. The
+wire format above does not change.
+
+#### Config and privacy
+
+| Key                 | Default | Notes                                              |
+|---------------------|---------|----------------------------------------------------|
+| `ShareMyFog`        | `false` | Privacy. Off means no `fog` frames and no `fog` on `hello` |
+| `ShareCartographyFog` | `true` | Also send the `shared` layer. Ignored when `ShareMyFog` is off |
+| `FogInterval`       | `20` s  | Live update cadence. Clamped to ≥ 5 s              |
+
+Fog is **off by default**, unlike position, because it reveals something
+position does not: **history**. A position frame shows where someone is now.
+A fog snapshot shows everywhere they have ever been in this world, from long
+before the session started: where the base is, which way they went for silver.
+That is reasonable for a streamer to choose, and not something to switch on for
+everyone in the room by installing a mod.
+
+- **Each player opts in for themselves.** A mod sends only its own character's
+  fog. A streamer who turns it on exposes nothing of their friends'.
+- **The `shared` layer is the exception, and only partly.** It contains what
+  other players drew onto a cartography table this character read. It is the
+  sharing player's own copy, and already visible in their own game, but it can
+  include ground mapped by someone who left `ShareMyFog` off. That is the
+  reason `ShareCartographyFog` is a separate switch.
+- **`StreamerMode` does not affect fog.** It governs what arrives *in*, and fog
+  only goes out. The streamer who asked for this will have it on.
+- **`ShareMyPosition = false` turns fog off too**, whatever `ShareMyFog` says.
+  "Where I have been but not where I am" sounds coherent, but it is not: a live
+  tile shows the edge of the fog moving, and that edge is where the player is,
+  give or take the reveal radius and 20 s. A player who hid their position would
+  be broadcasting it anyway.
 
 ---
 
@@ -505,6 +749,7 @@ no edits):
 | `Enabled`            | `true`               | Master switch                    |
 | `ShareMyPosition`    | `true`               | Opt out, stay in the session      |
 | `ShareHealth`        | `true`               | Gates `hp`/`maxHp` in §3.2       |
+| `ShareMyFog`         | `false`              | Opt in; §3.7 has its two siblings |
 | `PositionInterval`   | `1.0` s              | Clamp to ≥ 0.5 s                 |
 | `AcceptMapMarkers`   | `true`               | Map → in-game pins               |
 | `ToggleKey`          | `F8`                 | Held with Shift by default        |
@@ -609,7 +854,7 @@ accident:
    refuse to load?
 5. **Exploration/fog sharing** (`Minimap.m_explored`) is an obvious v2 feature and
    an obvious way to blow past the 8192-byte frame limit. Out of scope for v1;
-   if it happens, it needs its own chunked design.
+   if it happens, it needs its own chunked design. **That design is now §3.7.**
 
 ---
 
