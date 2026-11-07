@@ -306,14 +306,15 @@ fit.
 #### `fog` — mod → maps
 
 ```json
-{ "type": "fog", "v": 1, "layer": "own", "w": 2048, "px": 12, "n": 128,
+{ "type": "fog", "v": 1, "w": 2048, "px": 12, "n": 128,
   "tx": 9, "tz": 4, "enc": "rle", "d": "AIAB…" }
 ```
 
-- **`layer`** is `own` or `shared`. `own` is `m_explored`, what this
-  character has seen itself. `shared` is `m_exploredOthers`, what it has picked
-  up from a cartography table. The game tints the two differently, and the map
-  may too. An absent or unrecognised `layer` reads as `own`.
+- **`layer` is reserved.** v1 sends only the character's own exploration,
+  `m_explored`, and omits the field. A map **drops** any `fog` frame whose
+  `layer` is present and is not `own`. That is a deliberate exception to §3's
+  "ignore unknown fields": a later layer (see Deferred, below) must not be ORed
+  into the own layer by a map that predates it.
 - **`d`** is the tile's `n × n` cells in standard base64 with padding. Cell
   `i` of the tile is array cell `(tx·n + i mod n, tz·n + ⌊i / n⌋)`: the same
   order as `m_explored`, restricted to the tile. A set cell means explored.
@@ -334,8 +335,8 @@ fit.
   to `uid` from `welcome` and `hello`, as it already does for `position` (§3.2).
 
 **A tile is merged with OR, never replaced.** Exploration only grows in game, so
-a map ORs every tile it receives into what it already holds for that `uid` and
-`layer`. That makes the frame idempotent and order-independent. A duplicate is
+a map ORs every tile it receives into what it already holds for that player.
+That makes the frame idempotent and order-independent. A duplicate is
 harmless, a reordered pair converges, and a snapshot overlapping live updates
 needs no sequencing. It is also why tiles are sent whole rather than as lists of
 newly explored pixels. A lost pixel list is a hole the map never fills. A lost
@@ -347,8 +348,7 @@ tile is fixed by the next send of that tile.
 { "type": "request_fog", "v": 1, "uid": "vh_7f3c9a21" }
 ```
 
-This asks for a **snapshot**: every tile with at least one explored cell, both
-layers.
+This asks for a **snapshot**: every tile with at least one explored cell.
 
 - **`uid` is optional.** Present, it addresses one player: only the mod whose
   `uid` matches answers. Absent, it addresses everyone. The relay broadcasts map
@@ -383,10 +383,10 @@ fifteen resend everything.
    so the map fills in around wherever the stream is looking.
 3. **Nothing else.** In particular, nothing goes out on connect. The map asks.
 
-Tiles to send are held as a **set of tile keys**, `(layer, tx, tz)`, not as a
+Tiles to send are held as a **set of tile keys**, `(tx, tz)`, not as a
 queue of encoded frames. A tile is encoded when it is taken from the set, so it
 always carries the content current at send time. A tile queued twice is sent
-once. The set is bounded by the tile count (2 × 256 on an unmodded world), so
+once. The set is bounded by the tile count (256 on an unmodded world), so
 unlike §12.10's reliable lane it cannot overflow and needs no drop policy.
 
 The set is the **lowest-priority** outbound lane. A fog frame goes out only when
@@ -396,8 +396,9 @@ the reliable lane and the position slot are both empty, and at most one every
 one tile per take.
 
 Which tiles changed is learned by patching the game's explore step (below): each
-reveal marks the tiles its circle overlaps. On the cartography table, or any
-other event that merges a whole map in, the mod marks every tile. Marking is
+reveal marks the tiles its circle overlaps. If confirming the hooks turns up
+anything else that writes `m_explored` wholesale, the mod marks every tile when
+it happens. Marking is
 cheap and over-marking is harmless, because a tile that comes out identical to
 what this connection last sent it as is skipped. On a new connection that record
 is cleared, since the map will ask for a snapshot anyway.
@@ -422,20 +423,19 @@ see no change. It tells the map two things:
 
 At a 20 s cadence the authoritative tiles lag what the player sees. The map
 closes that gap itself, at no wire cost. For a player whose `hello` carries
-`fog`, it paints the `own` layer with a disc of radius `r` around every
+`fog`, it paints a disc of radius `r` around every
 `position` it receives. It joins consecutive positions with a capsule so a fast
 boat does not leave gaps. The next tile from the mod corrects any difference.
 Painting is an approximation; the tiles are the truth.
 
 Painting alone is not enough. It knows nothing explored before the session or
-before the map was opened, nothing from the cartography table, and nothing while
+before the map was opened, and nothing while
 §12.8's dead-band held positions back. Tiles alone are correct but late.
 Together, the map is right on load and moves with the player.
 
 #### What the map does with it
 
-- Store fog per `uid` and per `layer`. Not per `playerId`, which changes on
-  every reconnect.
+- Store fog per `uid`. Not per `playerId`, which changes on every reconnect.
 - When a `uid`'s `hello` arrives with a different `world.uid`, drop that `uid`'s
   fog. It is a different world.
 - The display is the map's choice: union of every sharing player, one player,
@@ -454,7 +454,7 @@ Estimates, to be replaced with measurements once there is something to measure.
   couple of tiles in 20 s. That is roughly 50 bytes/s per moving player, a
   fraction of their `position` traffic.
 - **Snapshot:** a well-explored late-game character might have 50–100 non-empty
-  tiles across both layers. That is perhaps 50–150 KB, delivered over 10–20 s at
+  tiles. That is perhaps 50–150 KB, delivered over 10–20 s at
   the 100 ms pacing, to every map in the room.
 
 #### Game data
@@ -474,24 +474,38 @@ it from real save data for some time:
 
 | Need                       | Expected source                                           |
 |----------------------------|-----------------------------------------------------------|
-| Own explored cells         | `Minimap.m_explored` — layout known, field name to confirm |
-| Shared explored cells      | `Minimap.m_exploredOthers` — assumed to share the layout   |
+| Explored cells             | `Minimap.m_explored` — layout known, field name to confirm |
 | `w`, `px`                  | `m_textureSize`, `m_pixelSize`, on the instance            |
 | `r`                        | `Minimap.m_exploreRadius`                                 |
 | A reveal happened          | Postfix on `Minimap.Explore(Vector3, float)`              |
-| A whole map was merged in  | Postfix on `Minimap.AddSharedMapData`                     |
 
-`m_exploredOthers` sharing the layout is an assumption, not a measurement. It
-backs the same texture, so it would be surprising if it differed. A check is
-cheap: the map can apply the same built-pieces test to a character that has
-used a cartography table.
+#### Deferred: cartography-table fog
+
+Not in v1, and to be picked up only if enough players ask for it.
+
+A character that reads a cartography table gains a second explored set,
+`m_exploredOthers`, which the game tints differently from its own. Sending it
+would be a second layer, `"layer": "shared"`, which is why `layer` is reserved
+above. It would need:
+
+- A separate switch, off unless chosen. The shared set contains what *other*
+  players drew onto the table, so it can include ground mapped by someone who
+  left `ShareMyFog` off. That is the sharing player's own copy and already
+  visible in their own game, but it is the one way fog could carry someone
+  else's history.
+- Its layout confirmed. It backs the same texture, so it would be surprising if
+  it differed from `m_explored`, but the map's built-pieces test has only been
+  run on the own set. Running it on a character that has used a table settles it.
+- A hook for the merge (expected: `Minimap.AddSharedMapData`) that marks every
+  tile, since a table read changes the whole map at once.
+- Maps that store fog per `uid` *and* layer. v1 maps drop the frames, so
+  nothing breaks in between.
 
 #### Config and privacy
 
 | Key                 | Default | Notes                                              |
 |---------------------|---------|----------------------------------------------------|
 | `ShareMyFog`        | `false` | Privacy. Off means no `fog` frames and no `fog` on `hello` |
-| `ShareCartographyFog` | `true` | Also send the `shared` layer. Ignored when `ShareMyFog` is off |
 | `FogInterval`       | `20` s  | Live update cadence. Clamped to ≥ 5 s              |
 
 Fog is **off by default**, unlike position, because it reveals something
@@ -503,11 +517,6 @@ everyone in the room by installing a mod.
 
 - **Each player opts in for themselves.** A mod sends only its own character's
   fog. A streamer who turns it on exposes nothing of their friends'.
-- **The `shared` layer is the exception, and only partly.** It contains what
-  other players drew onto a cartography table this character read. It is the
-  sharing player's own copy, and already visible in their own game, but it can
-  include ground mapped by someone who left `ShareMyFog` off. That is the
-  reason `ShareCartographyFog` is a separate switch.
 - **`StreamerMode` does not affect fog.** It governs what arrives *in*, and fog
   only goes out. The streamer who asked for this will have it on.
 - **`ShareMyPosition = false` turns fog off too**, whatever `ShareMyFog` says.
@@ -775,7 +784,7 @@ no edits):
 | `Enabled`            | `true`               | Master switch                    |
 | `ShareMyPosition`    | `true`               | Opt out, stay in the session      |
 | `ShareHealth`        | `true`               | Gates `hp`/`maxHp` in §3.2       |
-| `ShareMyFog`         | `false`              | Opt in; §3.7 has its two siblings |
+| `ShareMyFog`         | `false`              | Opt in; `FogInterval` in §3.7     |
 | `PositionInterval`   | `1.0` s              | Clamp to ≥ 0.5 s                 |
 | `AcceptMapMarkers`   | `true`               | Map → in-game pins               |
 | `ToggleKey`          | `F8`                 | Held with Shift by default        |
