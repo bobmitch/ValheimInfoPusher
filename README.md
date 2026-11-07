@@ -13,17 +13,16 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M1 — `Core` and its tests | **Done.** 436 tests, no game required |
 | M2 — single player, outbound | **Done.** Loads, starts a session in-game, and positions show up on the live web map |
 | M3 — multiplayer, zero typing | Code complete; patches apply on the current game build. Never run with a second player |
-| M4 — inbound markers and pings | Pings from a map now arrive in-game. The first one landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead. Markers still unverified |
+| M4 — inbound markers and pings | **Done.** Pings and markers from the live map arrive in-game. The first ping landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead |
 | M4b — outbound ping capture | **Code complete, never run in a game.** A ping made in game now reaches the room, closing §3.3's other direction. See below |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
 | M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip. Releases are published there; [`packaging/CHANGELOG.md`](packaging/CHANGELOG.md) lists them |
 | §3.7 — fog of war | **Code complete, never run in a game.** Opt-in (`ShareMyFog`, off by default). See below |
 
 **The web map is live** at `https://bobmitch.com/valheim`, built in its own
-repository, and shows players' positions from the mod. Positions are the part
-checked end to end so far. Markers in both directions and fog of war (§3.7) are
-not yet confirmed against it; the table above and the sections below say what
-each has been tested against instead.
+repository. Positions and markers work end to end against it. Fog of war
+(§3.7) is not yet confirmed against it; its section below says what it has been
+tested against instead.
 
 ## Achievements (Valheim 1.0)
 
