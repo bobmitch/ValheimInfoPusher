@@ -10,19 +10,20 @@ implementing it turned up**, and is the first thing to read after the plan.
 | Milestone | State |
 |---|---|
 | M0 — spikes | **(a) answered: yes**, in-game. (b) still open — needs a dedicated server |
-| M1 — `Core` and its tests | **Done.** 226 tests, no game required |
-| M2 — single player, outbound | **Loads and starts a session in-game.** Whether position frames arrive is untested — there is no map yet to receive them |
+| M1 — `Core` and its tests | **Done.** 436 tests, no game required |
+| M2 — single player, outbound | **Done.** Loads, starts a session in-game, and positions show up on the live web map |
 | M3 — multiplayer, zero typing | Code complete; patches apply on the current game build. Never run with a second player |
 | M4 — inbound markers and pings | Pings from a map now arrive in-game. The first one landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead. Markers still unverified |
 | M4b — outbound ping capture | **Code complete, never run in a game.** A ping made in game now reaches the room, closing §3.3's other direction. See below |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
-| M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip; 0.1.1 is published there |
+| M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip. Releases are published there; [`packaging/CHANGELOG.md`](packaging/CHANGELOG.md) lists them |
 | §3.7 — fog of war | **Code complete, never run in a game.** Opt-in (`ShareMyFog`, off by default). See below |
 
-**The web map does not exist yet.** Only the mod and the relay have been built,
-so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
-inbound (§4 markers, pings) and the whole point of the outbound stream are
-consequently unverified end to end: the mod sends, and nothing is reading.
+**The web map is live** at `https://bobmitch.com/valheim`, built in its own
+repository, and shows players' positions from the mod. Positions are the part
+checked end to end so far. Markers in both directions and fog of war (§3.7) are
+not yet confirmed against it; the table above and the sections below say what
+each has been tested against instead.
 
 ## Achievements (Valheim 1.0)
 
@@ -121,8 +122,7 @@ The relay at `wss://valheimrelay.bobmitch.com/ws` **is up**, and the handshake
 contract is confirmed against it rather than only against the fixture: `role=mod`
 with no code creates a session and returns a welcome, and an unknown `code=`
 closes 4004 as §1.4 requires. So a fresh install needs no config edits (§11.2),
-and Shift+F8 copies a link that will work once there is something at the other end
-(§11.3).
+and the link Shift+F8 copies opens the live map (§11.3).
 
 ## Fog of war (§3.7)
 
@@ -172,9 +172,8 @@ The **panel and its QR are now confirmed in game.** The panel opens over the
 minimap and draws the symbol, and a phone reads it off the screen: the whole §7
 path — `QrCode.Encode`, the `QrTexture` pixels, their orientation, and 160px
 being big enough to scan at arm's length — holds on the real thing and not only
-against the goldens and a desktop scanner. What the scan opens is still nothing,
-because the map does not exist; what is settled is that the symbol carries the
-link the panel copied.
+against the goldens and a desktop scanner. The symbol carries the link the
+panel copied, which now opens the live map.
 
 Still unverified in-game, in rough order of risk: that the connection survives
 past the ping interval; that reconnect and code reclaim work across a restart
