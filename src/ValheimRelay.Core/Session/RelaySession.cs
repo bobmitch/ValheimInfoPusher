@@ -64,6 +64,8 @@ namespace ValheimRelay.Core.Session
         private readonly OutboundQueue _outbound;
         private readonly PositionThrottle _throttle;
         private readonly MarkerStore _markers = new MarkerStore();
+        private readonly FogSync _fog;
+        private readonly IFogSource? _fogSource;
         private readonly Backoff _backoff;
         private readonly Backoff _relayFullBackoff;
 
@@ -109,6 +111,16 @@ namespace ValheimRelay.Core.Session
         private bool _isCreator;
         private int _markerSequence;
 
+        // Fog (§3.7). The map is read once per tick, before anything else, so
+        // every decision in that tick — hello's opt-in included — sees the same
+        // one. _advertisedFog is what the last hello on this connection said,
+        // so a change in either direction re-sends hello at once.
+        private bool _fogWanted;
+        private FogMap _fogMap;
+        private bool _fogMapValid;
+        private double? _advertisedFog;
+        private bool _fogReadWarned;
+
         public RelaySession(
             SessionOptions options,
             IRelayTransport transport,
@@ -117,7 +129,8 @@ namespace ValheimRelay.Core.Session
             IClock clock,
             ILog log,
             ReclaimStore reclaim,
-            Func<double>? random = null)
+            Func<double>? random = null,
+            IFogSource? fogSource = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _transport = transport ?? throw new ArgumentNullException(nameof(transport));
@@ -131,6 +144,9 @@ namespace ValheimRelay.Core.Session
             _arbiter = new CodeArbiter(clock);
             _outbound = new OutboundQueue(_options.OutboundReliableCapacity);
             _throttle = new PositionThrottle(_options);
+            _fog = new FogSync(_options);
+            _fogSource = fogSource;
+            _fogWanted = _options.ShareFog;
             _backoff = new Backoff(random: random);
             _relayFullBackoff = Backoff.ForRelayFull(random);
 
@@ -156,6 +172,17 @@ namespace ValheimRelay.Core.Session
 
         public MarkerStore Markers => _markers;
 
+        public FogSync Fog => _fog;
+
+        /// <summary>
+        /// Whether fog goes out (§3.7 <c>ShareMyFog</c>), changeable live. Still
+        /// subject to position sharing: see <see cref="SessionOptions.ShareFog"/>.
+        /// </summary>
+        public void SetFogSharing(bool share) => _fogWanted = share;
+
+        /// <summary>The effective switch: fog requires position sharing, whatever the fog setting says.</summary>
+        private bool FogShared => _fogWanted && _options.SharePosition;
+
         public event Action<SessionState>? StateChanged;
         public event Action<SessionNotice>? Notice;
 
@@ -172,6 +199,8 @@ namespace ValheimRelay.Core.Session
             _identity = identity ?? throw new ArgumentNullException(nameof(identity));
             _markers.Clear();
             _markerSequence = 0;
+            _fog.Reset();
+            _advertisedFog = null;
             _codeShownToPlayer = null;
             _deliberateCloses = 0;
             _arbiter.ClearCurrent();
@@ -200,6 +229,8 @@ namespace ValheimRelay.Core.Session
             CloseTransport(1000, reason, expectClose: false);
             _outbound.Clear();
             _markers.Clear();
+            _fog.Enabled = false;
+            _fog.OnConnectionChanged();
             _activeCode = null;
             _codeShownToPlayer = null;
             _isCreator = false;
@@ -231,6 +262,7 @@ namespace ValheimRelay.Core.Session
         /// <summary>Drives the whole machine. Call once per frame from the main thread.</summary>
         public void Tick()
         {
+            ReadFogMap();
             DrainSocketEvents();
             DrainAnnouncements();
             DrainCodeRequests();
@@ -321,7 +353,46 @@ namespace ValheimRelay.Core.Session
             {
                 ReplayState();
             }
+
+            // §3.7: hello carries the opt-in, so it must change the moment the
+            // answer does — a map should start asking for tiles when sharing
+            // turns on, and stop drawing a player the moment it turns off.
+            if (!Nullable.Equals(FogAdvertisement(), _advertisedFog)) SendHello();
+
+            if (_fogMapValid) _fog.Tick(now, _fogMap);
         }
+
+        private void ReadFogMap()
+        {
+            _fog.Enabled = _state == SessionState.Active && FogShared;
+
+            _fogMapValid = false;
+            if (_fogSource == null || !_fog.Enabled) return;
+
+            try
+            {
+                if (_fogSource.TryGetFogMap(out var map) && map.IsValid)
+                {
+                    _fogMap = map;
+                    _fogMapValid = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                // The source is the plugin reading game fields. A throw here
+                // would take the whole session down every frame; fog is the
+                // least important thing the session does. Once, because this
+                // runs every frame and a broken field stays broken.
+                if (!_fogReadWarned)
+                {
+                    _fogReadWarned = true;
+                    _log.Warn("could not read the explored map, so fog of war will not be shared: " + ex.Message);
+                }
+            }
+        }
+
+        /// <summary>What <c>hello</c> should say about fog right now (§3.7): the reveal radius, or nothing.</summary>
+        private double? FogAdvertisement() => FogShared && _fogMapValid ? _fogMap.RevealRadius : (double?)null;
 
         /// <summary>
         /// A socket that opens but never delivers <c>welcome</c> — a wedged
@@ -354,9 +425,15 @@ namespace ValheimRelay.Core.Session
                 // The frame is only removed once the transport has taken it. A
                 // refusal leaves it exactly where it was, in order, and draining
                 // resumes next tick.
-                if (!_transport.Send(frame)) break;
+                if (!_transport.Send(frame)) return;
                 _outbound.CommitPeek();
             }
+
+            // Fog is the lowest lane (§3.7): it goes only when everything else
+            // has, so a snapshot never delays a marker, a ping or a position.
+            if (_state != SessionState.Active || !_fogMapValid) return;
+            var fog = _fog.NextFrame(_fogMap, _clock.Elapsed);
+            if (fog != null && !_transport.Send(fog)) _fog.Refused();
         }
 
         // ------------------------------------------------------------- outbound
@@ -369,6 +446,11 @@ namespace ValheimRelay.Core.Session
         {
             if (_state != SessionState.Active) return;
             if (!_options.SharePosition) return;
+
+            // Every sample, not just the ones that go out: the game reveals a
+            // circle around the player, and the tiles under it are what the
+            // next fog update re-checks (§3.7).
+            _fog.NotePosition(sample.X, sample.Z);
 
             var now = _clock.Elapsed;
             if (now - _lastPositionAt < _options.PositionInterval) return;
@@ -443,12 +525,14 @@ namespace ValheimRelay.Core.Session
         {
             if (_identity == null) return;
             _lastHelloAt = _clock.Elapsed;
+            _advertisedFog = FogAdvertisement();
             var hello = new HelloFrame(
                 _identity.PlayerName,
                 _identity.Uid,
                 _identity.ModVersion,
                 _identity.World,
-                _options.SharePosition);
+                _options.SharePosition,
+                _advertisedFog);
             EnqueueReliable(FrameCodec.WriteHello(hello));
         }
 
@@ -525,6 +609,12 @@ namespace ValheimRelay.Core.Session
                 case FrameTypes.RequestState:
                     HandleRequestState();
                     break;
+                case FrameTypes.RequestFog:
+                    // Addressed to one uid or to everyone (§3.7). Ignored, not
+                    // owed, while sharing is off: turning it on re-sends hello,
+                    // and the map asks again when it sees that.
+                    if (FrameCodec.IsRequestFogFor(frame, _identity?.Uid)) _fog.RequestSnapshot(_clock.Elapsed);
+                    break;
                 case FrameTypes.Ping:
                     if (FrameCodec.ReadPing(frame) is PingFrame ping) PingReceived?.Invoke(ping);
                     break;
@@ -576,6 +666,15 @@ namespace ValheimRelay.Core.Session
             SetState(SessionState.Active);
             _throttle.Reset();
             _lastPositionAt = TimeSpan.Zero;
+
+            // A new connection is a new playerId, so maps treat this as a
+            // player they have not had fog from and ask for a snapshot (§3.7).
+            // Nothing recorded against the last connection applies.
+            _fog.OnConnectionChanged();
+
+            // Read again now the state is Active, so this hello already carries
+            // the opt-in rather than a second hello following it next tick.
+            ReadFogMap();
             SendHello();
 
             if (_isCreator) AnnounceCode();
@@ -618,6 +717,7 @@ namespace ValheimRelay.Core.Session
         private void HandleClosed(int closeCode, string reason)
         {
             _outbound.Clear();
+            _fog.OnConnectionChanged();
 
             if (_state == SessionState.Stopped) return;
 
@@ -754,6 +854,7 @@ namespace ValheimRelay.Core.Session
 
             CloseTransport(1000, "migrating to " + announcement.Code);
             _outbound.Clear();
+            _fog.OnConnectionChanged();
             BeginConnect(announcement.Code, null, announcement.Epoch, SessionState.Joining);
         }
 

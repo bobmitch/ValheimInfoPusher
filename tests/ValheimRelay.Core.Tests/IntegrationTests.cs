@@ -167,6 +167,45 @@ namespace ValheimRelay.Core.Tests
             Assert.Equal(SessionState.Blocked, refused.Session.State);
         }
 
+        /// <summary>
+        /// §3.7 through the real relay: a new mod frame type reaches the map,
+        /// a new map frame type reaches the mod, and the largest tile the
+        /// encoder can produce survives the relay's frame limit intact.
+        /// </summary>
+        [SkippableFact]
+        public async Task AMapThatAsksForFogGetsTilesThroughTheRelay()
+        {
+            Xunit.Skip.If(NoToolchain, "the Go toolchain is not available");
+
+            var source = new FakeFogSource(size: 256);
+            // Tile (0, 0) is a checkerboard, the worst case: the bits fallback.
+            for (var cy = 0; cy < FogTiles.TileSize; cy++)
+            for (var cx = 0; cx < FogTiles.TileSize; cx++)
+            {
+                source.Explored[(cy * source.Size) + cx] = (cx + cy) % 2 == 0;
+            }
+
+            using var host = new SessionHost(_relay!.Url, fogSource: source);
+            var code = await host.StartAndWaitForCodeAsync();
+
+            using var map = await StubMap.ConnectAsync(_relay.Url, code);
+            var hello = await map.WaitForAsync(FrameTypes.Hello);
+            Assert.Equal(100, hello["fog"]["r"].AsDouble());
+
+            await map.SendAsync("{\"type\":\"request_fog\",\"v\":1,\"uid\":\"vh_bob\"}");
+            var tile = await map.WaitForAsync(FrameTypes.Fog);
+
+            Assert.Equal(FogEncodings.Bits, tile["enc"].AsString());
+            Assert.False(string.IsNullOrEmpty(tile["playerId"].AsString()));
+            Assert.True(FogTiles.TryDecode(tile["enc"].AsString(), tile["d"].AsString(), out var cells));
+            for (var i = 0; i < cells.Length; i++)
+            {
+                Assert.Equal(((i % FogTiles.TileSize) + (i / FogTiles.TileSize)) % 2 == 0, cells[i]);
+            }
+
+            Assert.Equal(SessionState.Active, host.Session.State);
+        }
+
         [SkippableFact]
         public async Task ADroppedConnectionResumesTheSameRoom()
         {

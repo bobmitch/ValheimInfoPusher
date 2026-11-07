@@ -249,10 +249,12 @@ split that way.
 
 ### 3.7 Fog of war — `fog` and `request_fog`
 
-**Status: designed, not implemented.** Nothing in the mod sends these yet. The
-explored array's size, scale and index order are known from the map's `.fch`
-save import (see "Game data", at the end). The runtime hooks this relies on
-have not been checked against a decompile.
+**Status: implemented in the mod, never run in a game.** `FogTiles` and
+`FogSync` in Core carry the logic and are covered by the suite; the plugin reads
+the explored map in `GameBridge.TryGetFogMap`. The explored array's size, scale
+and index order are known from the map's `.fch` save import (see "Game data", at
+the end). The four `Minimap` field names have not been checked against the
+current build, and fail soft if they are wrong.
 
 The map can show what each player has *revealed*, live, the way the in-game map
 shows it. Requested by a streamer, so viewers can watch the fog lift as the
@@ -392,16 +394,25 @@ unlike §12.10's reliable lane it cannot overflow and needs no drop policy.
 The set is the **lowest-priority** outbound lane. A fog frame goes out only when
 the reliable lane and the position slot are both empty, and at most one every
 100 ms. A snapshot never delays a marker, a ping or a position. Reading
-`m_explored` is main-thread work (§4.2), so encoding happens on the main thread,
-one tile per take.
+`m_explored` is main-thread work (§4.2), so encoding happens on the main thread.
+Tiles that turn out not to need sending (empty, or unchanged) are skipped
+without waiting for the gap, up to 32 a tick, which bounds a frame's work.
 
-Which tiles changed is learned by patching the game's explore step (below): each
-reveal marks the tiles its circle overlaps. If confirming the hooks turns up
-anything else that writes `m_explored` wholesale, the mod marks every tile when
-it happens. Marking is
-cheap and over-marking is harmless, because a tile that comes out identical to
-what this connection last sent it as is skipped. On a new connection that record
-is cleared, since the map will ask for a snapshot anyway.
+Which tiles changed is learned from the player's **position**, not from a patch
+on the game's explore step. The game reveals a circle of radius `r` around the
+player, so every position sample marks the tiles that circle overlaps. That
+needs no Harmony patch on a method whose signature nobody has confirmed, and it
+cannot miss a reveal the patch would have caught: a tile is 1536 m across and
+positions are sampled every frame. Marking is cheap and over-marking is
+harmless, because a tile that comes out identical to what this connection last
+sent it as is skipped. On a new connection that record is cleared, since the map
+will ask for a snapshot anyway.
+
+Exploration away from the player — a console command, or anything a later
+build adds — is caught by a **sweep**: every 5 minutes every tile is re-checked.
+The sweep only sends tiles this connection has already sent the map. A tile the
+map has never had from it is left for the map's next snapshot. Otherwise the
+sweep would turn into a snapshot nobody asked for.
 
 #### `hello` carries the opt-in
 
@@ -477,7 +488,11 @@ it from real save data for some time:
 | Explored cells             | `Minimap.m_explored` — layout known, field name to confirm |
 | `w`, `px`                  | `m_textureSize`, `m_pixelSize`, on the instance            |
 | `r`                        | `Minimap.m_exploreRadius`                                 |
-| A reveal happened          | Postfix on `Minimap.Explore(Vector3, float)`              |
+
+No hook is needed: change detection runs off position (above). The fields are
+looked up by name rather than read through the publicized assembly, so a build
+that renames one costs fog of war and one log line, and nothing else. A missing
+`m_exploreRadius` falls back to 100 m, which affects only the map's painting.
 
 #### Deferred: cartography-table fog
 

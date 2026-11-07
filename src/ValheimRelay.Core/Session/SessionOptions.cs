@@ -97,6 +97,43 @@ namespace ValheimRelay.Core.Session
         public bool SharePings { get; set; } = true;
 
         /// <summary>
+        /// Whether this client shares its fog of war (§3.7 <c>ShareMyFog</c>).
+        /// Off by default, unlike position: fog is history, not just "now".
+        /// Has no effect while <see cref="SharePosition"/> is off, because a
+        /// live tile shows the edge of the fog moving, and that edge is where
+        /// the player is.
+        /// </summary>
+        public bool ShareFog { get; set; }
+
+        /// <summary>§3.7 live updates: changed tiles go out on this cadence. Clamped to at least 5 s.</summary>
+        public TimeSpan FogInterval { get; set; } = TimeSpan.FromSeconds(20);
+
+        /// <summary>
+        /// §3.7: at most one snapshot per this window, coalesced as §12.5 does
+        /// for <c>request_state</c>. Six times that cooldown because a snapshot
+        /// can be 100 KB, and the relay delivers it to every map in the room.
+        /// </summary>
+        public TimeSpan FogSnapshotCooldown { get; set; } = TimeSpan.FromSeconds(30);
+
+        /// <summary>§3.7 pacing: the minimum gap between two fog frames.</summary>
+        public TimeSpan FogFrameGap { get; set; } = TimeSpan.FromMilliseconds(100);
+
+        /// <summary>
+        /// How often every tile the map already holds is re-checked, so that
+        /// exploration not centred on the player — a console command, or
+        /// anything a later game build adds — still reaches the map. Tiles that
+        /// come out unchanged cost an encode and nothing on the wire.
+        /// </summary>
+        public TimeSpan FogSweepInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+        /// <summary>
+        /// Bounds the main-thread work of one tick: tiles that encode to
+        /// nothing worth sending (empty, or unchanged) are skipped without
+        /// waiting for <see cref="FogFrameGap"/>, but no more than this many.
+        /// </summary>
+        public int FogTilesExaminedPerTick { get; set; } = 32;
+
+        /// <summary>
         /// How long to wait for <c>welcome</c> after the socket opens before
         /// giving up and retrying.
         /// </summary>
@@ -122,6 +159,11 @@ namespace ValheimRelay.Core.Session
             if (HelloInterval < TimeSpan.FromSeconds(10)) HelloInterval = TimeSpan.FromSeconds(10);
             if (PositionKeepalive < PositionInterval) PositionKeepalive = PositionInterval;
             if (ConnectTimeout < TimeSpan.FromSeconds(5)) ConnectTimeout = TimeSpan.FromSeconds(5);
+            if (FogInterval < TimeSpan.FromSeconds(5)) FogInterval = TimeSpan.FromSeconds(5);
+            if (FogSnapshotCooldown < TimeSpan.FromSeconds(5)) FogSnapshotCooldown = TimeSpan.FromSeconds(5);
+            if (FogFrameGap < TimeSpan.FromMilliseconds(20)) FogFrameGap = TimeSpan.FromMilliseconds(20);
+            if (FogSweepInterval < FogInterval) FogSweepInterval = FogInterval;
+            if (FogTilesExaminedPerTick < 1) FogTilesExaminedPerTick = 1;
             // A replay is hello + every owned marker in one go.
             var replayFloor = MarkerStore.MaxOwnedMarkers + 8;
             if (OutboundReliableCapacity < replayFloor) OutboundReliableCapacity = replayFloor;

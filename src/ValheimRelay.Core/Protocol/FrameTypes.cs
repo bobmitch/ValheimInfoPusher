@@ -18,6 +18,10 @@ namespace ValheimRelay.Core.Protocol
 
         // Map → relay (§3.5).
         public const string RequestState = "request_state";
+
+        // Fog of war (§3.7): tiles mod → maps, snapshot requests map → mods.
+        public const string Fog = "fog";
+        public const string RequestFog = "request_fog";
     }
 
     /// <summary>Protocol version carried on every frame as <c>v</c>.</summary>

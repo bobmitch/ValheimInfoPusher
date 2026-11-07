@@ -17,6 +17,7 @@ implementing it turned up**, and is the first thing to read after the plan.
 | M4b — outbound ping capture | **Code complete, never run in a game.** A ping made in game now reaches the room, closing §3.3's other direction. See below |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
 | M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip; 0.1.1 is published there |
+| §3.7 — fog of war | **Code complete, never run in a game.** Opt-in (`ShareMyFog`, off by default). See below |
 
 **The web map does not exist yet.** Only the mod and the relay have been built,
 so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
@@ -122,6 +123,36 @@ with no code creates a session and returns a welcome, and an unknown `code=`
 closes 4004 as §1.4 requires. So a fresh install needs no config edits (§11.2),
 and Shift+F8 copies a link that will work once there is something at the other end
 (§11.3).
+
+## Fog of war (§3.7)
+
+With `ShareMyFog` on, the web map can show what this player has explored and
+watch it grow. [PLAN.md §3.7](PLAN.md#37-fog-of-war--fog-and-request_fog) is
+the wire contract; this is what the mod does with it.
+
+- **The map asks; the mod answers.** A `request_fog` gets a snapshot of every
+  explored 128 × 128-cell tile, nearest the player first and at most one frame
+  per 100 ms. After that, changed tiles go out every `FogInterval` (20 s).
+  Nothing goes out on connect.
+- **Fog never delays anything else.** It is sent only when markers, pings and
+  position have all gone.
+- **Change detection runs off position, not off a patch.** The game reveals a
+  circle around the player, so each position marks the tiles under that circle,
+  and a tile identical to what was last sent is skipped. A five-minute sweep
+  catches exploration away from the player. No game method is patched for this.
+- **Privacy:** off by default, because fog is history: everywhere the character
+  has been in this world. It shares only the player's own exploration.
+  `ShareMyPosition` off turns it off too, since the moving edge of the fog gives
+  position away. Turning it off stops sending at once and tells the map in a new
+  `hello`.
+- **Fails soft.** The four `Minimap` fields are looked up by name. If one has
+  moved, fog is not shared and one warning is logged; nothing else is affected.
+
+**Not verified in a game.** The encoder is checked against a reference decoder,
+and the scheduling against the session suite. The plugin's field reads were
+compiled and run against a stub `Minimap`, not the real one. The first in-game
+check: turn on `ShareMyFog`, look for the absence of a `fog of war cannot be
+shared` warning, and have a map send `request_fog`.
 
 ### What running it in Valheim has now shown
 
