@@ -10,18 +10,20 @@ implementing it turned up**, and is the first thing to read after the plan.
 | Milestone | State |
 |---|---|
 | M0 — spikes | **(a) answered: yes**, in-game. (b) still open — needs a dedicated server |
-| M1 — `Core` and its tests | **Done.** 226 tests, no game required |
-| M2 — single player, outbound | **Loads and starts a session in-game.** Whether position frames arrive is untested — there is no map yet to receive them |
+| M1 — `Core` and its tests | **Done.** 436 tests, no game required |
+| M2 — single player, outbound | **Done.** Loads, starts a session in-game, and positions show up on the live web map |
 | M3 — multiplayer, zero typing | Code complete; patches apply on the current game build. Never run with a second player |
-| M4 — inbound markers and pings | Pings from a map now arrive in-game. The first one landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead. Markers still unverified |
-| M4b — outbound ping capture | **Code complete, never run in a game.** A ping made in game now reaches the room, closing §3.3's other direction. See below |
+| M4 — inbound markers and pings | **Done.** Pings and markers from the live map arrive in-game. The first ping landed on `Minimap.ShowPointOnMap`, which opens the large map and pings nothing; it goes through `Minimap.AddPing` instead |
+| M4b — outbound ping capture | **Done.** A ping made in game shows up on the live map, closing §3.3's other direction. See below |
 | M5 — resilience | **Done in `Core`.** Reconnect and reclaim unverified in-game |
-| M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip; 0.1.1 is published there |
+| M6 — packaging | **Done.** `build.ps1 -Package` assembles the Thunderstore zip. Releases are published there; [`packaging/CHANGELOG.md`](packaging/CHANGELOG.md) lists them |
+| §3.7 — fog of war | **Code complete, never run in a game.** Opt-in (`ShareMyFog`, off by default). See below |
 
-**The web map does not exist yet.** Only the mod and the relay have been built,
-so `https://bobmitch.com/valheim` is a default pointing at nothing. Everything
-inbound (§4 markers, pings) and the whole point of the outbound stream are
-consequently unverified end to end: the mod sends, and nothing is reading.
+**The web map is live** at `https://bobmitch.com/valheim`, built in its own
+repository. Positions, markers and pings in both directions work end to end
+against it. Fog of war
+(§3.7) is not yet confirmed against it; its section below says what it has been
+tested against instead.
 
 ## Achievements (Valheim 1.0)
 
@@ -111,17 +113,48 @@ so a browser's cannot be told from a peer mod's on the wire. It costs the player
 nothing, because a peer's ping is already delivered by Valheim itself and the
 relayed copy is exactly what `PingEcho` was written to swallow.
 
-**Not verified in a game.** `PingEcho` and the session's send gate are covered by
-the `Core` suite. The patch itself, the re-entrancy guard and the argument reader
-are plugin-side, so nothing in CI compiles them; the argument reader was checked
-out of band against four call shapes and each non-ping talker type.
+**Verified in a game:** a ping made in game shows up on the live map, which
+means the patch applies, the argument reader works on this build, and the
+local-player check recognises the player's own ping. **Not yet verified:** the
+multiplayer half. The one-copy-per-ping filter and `PingEcho`'s duplicate
+suppression only matter with a second modded player, and that has not been run.
+`PingEcho` and the session's send gate are covered by the `Core` suite.
 
 The relay at `wss://valheimrelay.bobmitch.com/ws` **is up**, and the handshake
 contract is confirmed against it rather than only against the fixture: `role=mod`
 with no code creates a session and returns a welcome, and an unknown `code=`
 closes 4004 as §1.4 requires. So a fresh install needs no config edits (§11.2),
-and Shift+F8 copies a link that will work once there is something at the other end
-(§11.3).
+and the link Shift+F8 copies opens the live map (§11.3).
+
+## Fog of war (§3.7)
+
+With `ShareMyFog` on, the web map can show what this player has explored and
+watch it grow. [PLAN.md §3.7](PLAN.md#37-fog-of-war--fog-and-request_fog) is
+the wire contract; this is what the mod does with it.
+
+- **The map asks; the mod answers.** A `request_fog` gets a snapshot of every
+  explored 128 × 128-cell tile, nearest the player first and at most one frame
+  per 100 ms. After that, changed tiles go out every `FogInterval` (20 s).
+  Nothing goes out on connect.
+- **Fog never delays anything else.** It is sent only when markers, pings and
+  position have all gone.
+- **Change detection runs off position, not off a patch.** The game reveals a
+  circle around the player, so each position marks the tiles under that circle,
+  and a tile identical to what was last sent is skipped. A five-minute sweep
+  catches exploration away from the player. No game method is patched for this.
+- **Privacy:** off by default, because fog is history: everywhere the character
+  has been in this world. It shares only the player's own exploration.
+  `ShareMyPosition` off turns it off too, since the moving edge of the fog gives
+  position away. Turning it off stops sending at once and tells the map in a new
+  `hello`.
+- **Fails soft.** The four `Minimap` fields are looked up by name. If one has
+  moved, fog is not shared and one warning is logged; nothing else is affected.
+
+**Not verified in a game.** The encoder is checked against a reference decoder,
+and the scheduling against the session suite. The plugin's field reads were
+compiled and run against a stub `Minimap`, not the real one. The first in-game
+check: turn on `ShareMyFog`, look for the absence of a `fog of war cannot be
+shared` warning, and have a map send `request_fog`.
 
 ### What running it in Valheim has now shown
 
@@ -141,9 +174,8 @@ The **panel and its QR are now confirmed in game.** The panel opens over the
 minimap and draws the symbol, and a phone reads it off the screen: the whole §7
 path — `QrCode.Encode`, the `QrTexture` pixels, their orientation, and 160px
 being big enough to scan at arm's length — holds on the real thing and not only
-against the goldens and a desktop scanner. What the scan opens is still nothing,
-because the map does not exist; what is settled is that the symbol carries the
-link the panel copied.
+against the goldens and a desktop scanner. The symbol carries the link the
+panel copied, which now opens the live map.
 
 Still unverified in-game, in rough order of risk: that the connection survives
 past the ping interval; that reconnect and code reclaim work across a restart

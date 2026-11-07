@@ -172,7 +172,8 @@ namespace ValheimRelay.Plugin
 
             var options = _plugin.Settings.ToSessionOptions();
             _session?.Dispose();
-            _session = new RelaySession(options, _transport, _channel, _bridge, new UnityClock(), _plugin.Log, _reclaim);
+            _session = new RelaySession(
+                options, _transport, _channel, _bridge, new UnityClock(), _plugin.Log, _reclaim, fogSource: _bridge);
             _session.Notice += OnNotice;
             _session.PingReceived += OnPingReceived;
             _session.MarkerReceived += OnMarkerReceived;
@@ -242,6 +243,10 @@ namespace ValheimRelay.Plugin
                 _fallbackConsidered = true;
                 if (!_channel.RpcWorks) _channel.EnableChatFallback();
             }
+
+            // Read live, like the other privacy switches: a player turning
+            // fog off means now, and the session says so in a fresh hello.
+            _session.SetFogSharing(_plugin.Settings.SharesFog);
 
             SubmitPosition();
             _session.Tick();

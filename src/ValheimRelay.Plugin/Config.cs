@@ -89,10 +89,23 @@ namespace ValheimRelay.Plugin
                 + "something you chose to do, so turning off the position stream does not turn this off. "
                 + "Pings from other players are never forwarded by you, only your own.");
 
+            ShareMyFog = file.Bind("Privacy", "ShareMyFog", false,
+                "Show the web map what you have explored — the fog of war lifting as you go. Off by default "
+                + "because it shows history, not just now: everywhere you have been in this world, bases "
+                + "included, from long before this session. Only ever your own exploration, never anyone "
+                + "else's. Has no effect while ShareMyPosition is off, because the edge of the fog moving "
+                + "would give your position away anyway.");
+
             PositionInterval = file.Bind("Performance", "PositionInterval", 1.0f,
                 new ConfigDescription(
                     "Seconds between position updates. Clamped to at least 0.5.",
                     new AcceptableValueRange<float>(0.5f, 10f)));
+
+            FogInterval = file.Bind("Performance", "FogInterval", 20f,
+                new ConfigDescription(
+                    "Seconds between fog-of-war updates while ShareMyFog is on. The web map fills in "
+                    + "around you between updates on its own, so this can be slow without looking slow.",
+                    new AcceptableValueRange<float>(5f, 300f)));
 
             // F9 is a stock Valheim bind and a popular one among other mods, so
             // the panel sits on F8 plus Shift: an unbound key made two-handed,
@@ -130,7 +143,9 @@ namespace ValheimRelay.Plugin
         public ConfigEntry<bool> AcceptMapMarkers { get; }
         public ConfigEntry<bool> AcceptMapPings { get; }
         public ConfigEntry<bool> ShareMyPings { get; }
+        public ConfigEntry<bool> ShareMyFog { get; }
         public ConfigEntry<float> PositionInterval { get; }
+        public ConfigEntry<float> FogInterval { get; }
         public ConfigEntry<KeyCode> ToggleKey { get; }
         public ConfigEntry<bool> ToggleRequiresShift { get; }
         public ConfigEntry<PingStyle> PingStyle { get; }
@@ -149,6 +164,14 @@ namespace ValheimRelay.Plugin
         /// <summary>Whether a marker from the room is allowed onto the minimap.</summary>
         public bool AcceptsMapMarkers => !StreamerMode.Value && AcceptMapMarkers.Value;
 
+        /// <summary>
+        /// Whether fog of war goes out (§3.7). Needs position sharing as well,
+        /// because a live tile shows the edge of the fog moving, and that edge
+        /// is where the player is. <see cref="StreamerMode"/> plays no part: it
+        /// governs what comes in, and fog only goes out.
+        /// </summary>
+        public bool SharesFog => ShareMyFog.Value && ShareMyPosition.Value;
+
         public SessionOptions ToSessionOptions()
         {
             var options = new SessionOptions
@@ -156,7 +179,9 @@ namespace ValheimRelay.Plugin
                 RelayUrl = NormaliseRelayUrl(RelayUrl.Value),
                 PositionInterval = TimeSpan.FromSeconds(PositionInterval.Value),
                 SharePosition = ShareMyPosition.Value,
-                SharePings = ShareMyPings.Value
+                SharePings = ShareMyPings.Value,
+                ShareFog = SharesFog,
+                FogInterval = TimeSpan.FromSeconds(FogInterval.Value)
             };
 
             options.Normalise();

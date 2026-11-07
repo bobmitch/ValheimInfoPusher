@@ -39,6 +39,12 @@ namespace ValheimRelay.Core.Protocol
             // value of an optional field is that old maps ignore it correctly.
             if (!hello.SharingPosition) w.Prop("share", false);
 
+            // §3.7: omitted, not false, when off — the same rule as `share`.
+            if (hello.FogRevealRadius is double radius)
+            {
+                w.Name("fog").BeginObject().Prop("r", radius, 1).EndObject();
+            }
+
             if (!hello.World.IsEmpty)
             {
                 w.Name("world").BeginObject()
@@ -104,6 +110,29 @@ namespace ValheimRelay.Core.Protocol
             }
 
             return w.Prop("t", marker.TimestampMs).EndObject().ToString();
+        }
+
+        /// <summary>
+        /// One fog tile (§3.7). <c>w</c> and <c>px</c> go on every frame so a
+        /// map never has to assume the unmodded world, and so the frame decodes
+        /// without having seen a <c>hello</c> first. No <c>layer</c>: v1 sends
+        /// only the player's own exploration, and §3.7 reserves the field.
+        /// </summary>
+        public static string WriteFog(int mapSize, double metresPerPixel, int tx, int tz, string encoding, string data)
+        {
+            var w = new JsonWriter();
+            return w.BeginObject()
+                .Prop("type", FrameTypes.Fog)
+                .Prop("v", ProtocolVersion.Current)
+                .Prop("w", mapSize)
+                .Prop("px", metresPerPixel, 4)
+                .Prop("n", FogTiles.TileSize)
+                .Prop("tx", tx)
+                .Prop("tz", tz)
+                .Prop("enc", encoding)
+                .Prop("d", data)
+                .EndObject()
+                .ToString();
         }
 
         // ----------------------------------------------------------------- read
@@ -183,6 +212,19 @@ namespace ValheimRelay.Core.Protocol
                 frame["label"].AsString(),
                 MarkerIcons.Normalise(frame["icon"].AsString()),
                 frame["t"].AsLong());
+        }
+
+        /// <summary>
+        /// Whether a <c>request_fog</c> (§3.7) is for this player. Its <c>uid</c>
+        /// is optional: absent addresses every mod, present addresses one. The
+        /// relay broadcasts map frames to every mod (§1.3), so this is the only
+        /// place the addressing is applied.
+        /// </summary>
+        public static bool IsRequestFogFor(JsonValue frame, string? uid)
+        {
+            var target = frame["uid"].AsString();
+            if (target == null) return true;
+            return uid != null && string.Equals(target, uid, StringComparison.Ordinal);
         }
 
         /// <summary>The <c>playerId</c> the relay stamped on a relayed frame, if any.</summary>

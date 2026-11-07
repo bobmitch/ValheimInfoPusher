@@ -22,7 +22,7 @@ namespace ValheimRelay.Plugin
     /// after a game update strands the player with no map and no explanation.
     /// </para>
     /// </summary>
-    public sealed class GameBridge : IPeerView
+    public sealed class GameBridge : IPeerView, IFogSource
     {
         private readonly ILog _log;
         private readonly Func<PingStyle>? _pingStyle;
@@ -1190,6 +1190,131 @@ namespace ValheimRelay.Plugin
             public object Pin { get; }
 
             public float Expiry { get; }
+        }
+
+        // ----------------------------------------------------------------- fog
+
+        // §3.7. The four Minimap fields are looked up by name rather than read
+        // through the publicized assembly, for the same reason the ping path
+        // is: a game build that renames one costs fog of war and a log line,
+        // not a MissingFieldException thrown out of Update every frame.
+        private static readonly FieldInfo? ExploredField = FindMinimapField("m_explored");
+        private static readonly FieldInfo? TextureSizeField = FindMinimapField("m_textureSize");
+        private static readonly FieldInfo? PixelSizeField = FindMinimapField("m_pixelSize");
+        private static readonly FieldInfo? ExploreRadiusField = FindMinimapField("m_exploreRadius");
+
+        /// <summary>
+        /// The game's reveal radius when <c>m_exploreRadius</c> cannot be read.
+        /// Only the map's painting between tile updates uses it, so a guess
+        /// costs a slightly wrong-sized trail, never wrong tiles.
+        /// </summary>
+        private const float FallbackExploreRadius = 100f;
+
+        private Minimap? _fogMinimap;
+        private int _fogSize;
+        private double _fogPixelSize;
+        private double _fogRadius;
+        private bool _fogUnavailableLogged;
+        private bool _fogRadiusLogged;
+
+        /// <summary>
+        /// The live explored array and its geometry (§3.7), read off the
+        /// running <c>Minimap</c>. Size and scale come from the instance, never
+        /// from the class: the real values are serialized on the component, and
+        /// the initialisers in the decompiled source (256 and 64) are wrong.
+        /// <para>
+        /// Called every frame while fog is shared, so the value fields are read
+        /// once per minimap instance — a new world is a new instance — and only
+        /// the array reference is read each time.
+        /// </para>
+        /// </summary>
+        public bool TryGetFogMap(out FogMap map)
+        {
+            map = default;
+            try
+            {
+                var minimap = Minimap.instance;
+                if (minimap == null) return false;
+
+                if (ExploredField == null || TextureSizeField == null || PixelSizeField == null)
+                {
+                    LogFogUnavailable("Minimap is missing "
+                        + (ExploredField == null ? "m_explored " : string.Empty)
+                        + (TextureSizeField == null ? "m_textureSize " : string.Empty)
+                        + (PixelSizeField == null ? "m_pixelSize" : string.Empty));
+                    return false;
+                }
+
+                if (!ReferenceEquals(minimap, _fogMinimap))
+                {
+                    _fogMinimap = minimap;
+                    _fogSize = Convert.ToInt32(TextureSizeField.GetValue(minimap), CultureInfo.InvariantCulture);
+                    _fogPixelSize = Convert.ToDouble(PixelSizeField.GetValue(minimap), CultureInfo.InvariantCulture);
+                    _fogRadius = ReadExploreRadius(minimap);
+                }
+
+                var value = ExploredField.GetValue(minimap);
+
+                // Not allocated yet: the minimap is still starting up. Not worth
+                // a warning, which would claim fog is unavailable for good.
+                if (value == null) return false;
+
+                if (value is not bool[] explored)
+                {
+                    LogFogUnavailable("Minimap.m_explored is not a bool[] on this build");
+                    return false;
+                }
+
+                map = new FogMap(explored, _fogSize, _fogPixelSize, _fogRadius);
+                if (map.IsValid) return true;
+
+                LogFogUnavailable("the explored map does not match its own size (size " + _fogSize
+                    + ", " + explored.Length + " cells, " + _fogPixelSize + " m per cell)");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                LogFogUnavailable(Unwrap(ex).Message);
+                return false;
+            }
+        }
+
+        private double ReadExploreRadius(Minimap minimap)
+        {
+            if (ExploreRadiusField != null)
+            {
+                var radius = Convert.ToDouble(ExploreRadiusField.GetValue(minimap), CultureInfo.InvariantCulture);
+                if (radius > 0) return radius;
+            }
+
+            if (!_fogRadiusLogged)
+            {
+                _fogRadiusLogged = true;
+                _log.Warn("could not read Minimap.m_exploreRadius; telling the web map "
+                    + FallbackExploreRadius + " m. Fog tiles are unaffected.");
+            }
+            return FallbackExploreRadius;
+        }
+
+        private void LogFogUnavailable(string why)
+        {
+            if (_fogUnavailableLogged) return;
+            _fogUnavailableLogged = true;
+            _log.Warn("fog of war cannot be shared on this game build: " + why
+                + ". Everything else is unaffected.");
+        }
+
+        private static FieldInfo? FindMinimapField(string name)
+        {
+            try
+            {
+                return typeof(Minimap).GetField(
+                    name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+            }
+            catch (Exception)
+            {
+                return null;
+            }
         }
 
         /// <summary>A local-only chat line. Never used for anything secret (§5.3).</summary>

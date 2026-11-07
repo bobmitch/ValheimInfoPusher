@@ -27,13 +27,20 @@ namespace ValheimRelay.Core.Protocol
     /// <summary>The mod's identity frame (§3.1).</summary>
     public sealed class HelloFrame
     {
-        public HelloFrame(string name, string uid, string modVersion, WorldInfo world, bool sharingPosition = true)
+        public HelloFrame(
+            string name,
+            string uid,
+            string modVersion,
+            WorldInfo world,
+            bool sharingPosition = true,
+            double? fogRevealRadius = null)
         {
             Name = name ?? string.Empty;
             Uid = uid ?? string.Empty;
             ModVersion = modVersion ?? string.Empty;
             World = world;
             SharingPosition = sharingPosition;
+            FogRevealRadius = fogRevealRadius;
         }
 
         public string Name { get; }
@@ -51,6 +58,15 @@ namespace ValheimRelay.Core.Protocol
         /// would show the opted-out player as a frozen ghost.
         /// </summary>
         public bool SharingPosition { get; }
+
+        /// <summary>
+        /// Present only while this player shares fog of war (§3.7), as the
+        /// game's reveal radius in metres. Its presence is the opt-in: without
+        /// it the map cannot tell a player who chose not to share from one who
+        /// has not explored anything. The radius is what the map paints along
+        /// the position trail between tile updates.
+        /// </summary>
+        public double? FogRevealRadius { get; }
     }
 
     /// <summary>A single position sample (§3.2). Struct: this is built at 1 Hz and should not allocate.</summary>

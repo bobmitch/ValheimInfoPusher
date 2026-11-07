@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Fog of war on the web map. Turn on `ShareMyFog` (off by default) and the map
+  can show what you have explored, filling in as you go. It sends only your
+  own exploration, also works in No Map worlds, and stays off while
+  `ShareMyPosition` is off. `FogInterval` (20 s) sets how often updates go out.
+
 ## 0.1.3
 
 - Fixed the panel sometimes staying on "looking for a session" for ever,

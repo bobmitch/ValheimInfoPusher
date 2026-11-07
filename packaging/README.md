@@ -78,6 +78,15 @@ per-install value that cannot be traced back to your account.
 `ShareMyPosition = false` keeps you in the session and still shows you everyone
 else — you just do not appear on the map yourself. It is not all-or-nothing.
 
+**Fog of war is off unless you turn it on.** `ShareMyFog = true` lets the map show
+what you have explored, filling in as you go. Think before turning it on: unlike
+your position, it shows history — everywhere you have been in this world,
+including where your base is, from long before this session. It only ever sends
+your own exploration, never anyone else's. It also works in No Map worlds, so
+viewers see a map you are playing without. It stays off while
+`ShareMyPosition` is off, because the edge of the fog moving would give your
+position away anyway.
+
 **Streaming, or sharing the code widely?** `StreamerMode = true` makes the
 session one-way: viewers see you exactly as before, and nothing they do reaches
 your game — no pings, no pins on your minimap. It overrides `AcceptMapPings` and
@@ -111,7 +120,9 @@ Everything is defaulted; a fresh install needs no edits.
 | `AcceptMapMarkers` | `true` | Let the map place pins on your minimap |
 | `AcceptMapPings` | `true` | Let the map ping your game |
 | `ShareMyPings` | `true` | Send the pings you make in game to the map |
+| `ShareMyFog` | `false` | Show the map what you have explored. Needs `ShareMyPosition` |
 | `PositionInterval` | `1.0` | Seconds between updates, minimum 0.5 |
+| `FogInterval` | `20` | Seconds between fog-of-war updates, 5 to 300 |
 | `ToggleKey` | `F8` | Shows the panel, held with Shift |
 | `ToggleRequiresShift` | `true` | Require Shift with `ToggleKey`. Off means a bare keypress |
 | `PingStyle` | `Auto` | How a ping from the map is shown. Drop to `Map` or `Pin` if a game update breaks it |
@@ -129,6 +140,11 @@ longer, update the mod: before 0.1.3 it could wait for ever on a dedicated serve
 
 **"This session is full."** Sixteen players is the limit. The panel has a retry
 button for when someone leaves.
+
+**Fog of war does not show on the map.** Check `ShareMyFog` and `ShareMyPosition`
+are both on. If they are, look in `BepInEx/LogOutput.log` for a line saying fog
+of war cannot be shared on this game build: a game update has moved something
+the mod reads, and everything else keeps working.
 
 **Nothing happens after a game update.** Check `BepInEx/LogOutput.log` for a line
 from ValheimRelay. The mod is built to stay dormant and say so rather than break

@@ -152,7 +152,7 @@ namespace ValheimRelay.Core.Tests
         private double _z;
         private volatile bool _moving;
 
-        public SessionHost(string relayUrl, string playerName = "Bob", string uid = "vh_bob")
+        public SessionHost(string relayUrl, string playerName = "Bob", string uid = "vh_bob", IFogSource? fogSource = null)
         {
             Log = new FakeLog();
             _transport = new ClientWebSocketTransport(Log);
@@ -163,7 +163,8 @@ namespace ValheimRelay.Core.Tests
                 DiscoveryWindow = TimeSpan.FromMilliseconds(200),
                 CreationStaggerSpread = TimeSpan.Zero,
                 DiscoveryRetryInterval = TimeSpan.FromSeconds(1),
-                PositionInterval = TimeSpan.FromMilliseconds(100)
+                PositionInterval = TimeSpan.FromMilliseconds(100),
+                ShareFog = fogSource != null
             };
 
             PlayerName = playerName;
@@ -171,7 +172,7 @@ namespace ValheimRelay.Core.Tests
 
             Session = new RelaySession(
                 Options, _transport, _channel, new FakePeerView { SelfPeerId = 1 },
-                new SystemClock(), Log, new ReclaimStore(new InMemoryReclaimStorage(), Log));
+                new SystemClock(), Log, new ReclaimStore(new InMemoryReclaimStorage(), Log), fogSource: fogSource);
 
             _pump = Task.Run(PumpAsync);
         }
