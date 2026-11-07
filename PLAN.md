@@ -249,9 +249,10 @@ split that way.
 
 ### 3.7 Fog of war — `fog` and `request_fog`
 
-**Status: designed, not implemented.** Nothing in the mod sends these yet, and
-the game symbols this relies on (end of this section) have not been checked
-against a decompile.
+**Status: designed, not implemented.** Nothing in the mod sends these yet. The
+explored array's size, scale and index order are known from the map's `.fch`
+save import (see "Game data", at the end). The runtime hooks this relies on
+have not been checked against a decompile.
 
 The map can show what each player has *revealed*, live, the way the in-game map
 shows it. Requested by a streamer, so viewers can watch the fog lift as the
@@ -260,7 +261,7 @@ the end).
 
 #### Why this needs its own design
 
-A player's explored state is `Minimap.m_explored`: one bool per map pixel,
+A player's explored state is `Minimap.m_explored`: one `bool` per map pixel,
 2048 × 2048 at 12 m a pixel on an unmodded world. That is 512 KB as a packed
 bitmap, about 64 times the relay's 8192-byte frame cap (§1.5). So it is sent as
 **tiles**, each of which fits in one frame by construction.
@@ -273,16 +274,29 @@ bitmap, about 64 times the relay's 8192-byte frame cap (§1.5). So it is sent as
 | `px`   | World metres per pixel            | 12             |
 | `n`    | Tile edge, in pixels              | 128 (fixed)    |
 
-- Pixel `(cx, cy)` is centred on world `x = (cx − w/2) · px`,
-  `z = (cy − w/2) · px`. So `cx` increases eastward, `cy` northward, and pixel
-  `(w/2, w/2)` is the world origin.
-- Tile `(tx, tz)` covers pixels `cx ∈ [tx·n, tx·n + n)` and `cy ∈ [tz·n, tz·n + n)`.
+**The grid is the game's own array, not a compass description of it.** Cell
+`(cx, cy)` is `m_explored[cy · w + cx]`, and a tile is a sub-rectangle of that
+array in the same index order. The mod copies cells; it has no orientation to
+work out, and the two ends cannot disagree about one. The map already reads this
+exact layout out of `.fch` saves, because `GetMapData` writes the in-memory array
+out in order.
+
+- Tile `(tx, tz)` covers cells `cx ∈ [tx·n, tx·n + n)` and `cy ∈ [tz·n, tz·n + n)`.
   At the unmodded size that is a 16 × 16 grid of tiles, each 1536 m on a side.
+- For reference only, since neither end needs to derive it: `cx` runs east and
+  `cy` runs north, and cell `(cx, cy)` is centred on world
+  `x = (cx − w/2) · px`, `z = (cy − w/2) · px`. `Minimap.WorldToPixel` rounds
+  rather than floors, which is why cells are centred on those points rather
+  than starting at them. The north–south direction was measured, not assumed:
+  all 2,430 player-built pieces across six test characters land on explored
+  ground, against 1,126 with the axis flipped.
 - If `w` is not a multiple of `n`, the last row and column of tiles still have
   `n × n` cells. Cells beyond the map are 0.
 - `w` and `px` go on every frame rather than being assumed. Mods that enlarge
   the world change them, and the map should not need to know which mods are
-  installed.
+  installed. The mod reads them off the live `Minimap` instance, never from
+  the class: the real values come from the serialized component, and the
+  initialisers in the decompiled source (256 and 64) are wrong.
 
 `n = 128` is chosen so the worst case fits. 128² bits is 2048 bytes, which is
 2732 bytes base64'd. With the frame's other fields that is well under 8192
@@ -300,9 +314,9 @@ fit.
   character has seen itself. `shared` is `m_exploredOthers`, what it has picked
   up from a cartography table. The game tints the two differently, and the map
   may too. An absent or unrecognised `layer` reads as `own`.
-- **`d`** is the tile's `n × n` cells, row-major, in standard base64 with
-  padding. Row 0 is the southernmost row of the tile. Within a row, cell 0 is
-  the westernmost. A set cell means explored.
+- **`d`** is the tile's `n × n` cells in standard base64 with padding. Cell
+  `i` of the tile is array cell `(tx·n + i mod n, tz·n + ⌊i / n⌋)`: the same
+  order as `m_explored`, restricted to the tile. A set cell means explored.
 - **`enc`** says how `d` is packed. The mod sends whichever of the two is
   shorter:
   - `rle`: run lengths, each an unsigned LEB128 varint, alternating
@@ -443,22 +457,34 @@ Estimates, to be replaced with measurements once there is something to measure.
   tiles across both layers. That is perhaps 50–150 KB, delivered over 10–20 s at
   the 100 ms pacing, to every map in the room.
 
-#### Game data, unconfirmed
+#### Game data
 
-Check each of these against the build, as §4.3 asks for everything else.
+The array itself is **known**, from the map's `.fch` import, which has decoded
+it from real save data for some time:
+
+- 2048 × 2048 cells at 12 m on an unmodded world, from the serialized
+  `Minimap` component. The class initialisers say 256 and 64, and are wrong.
+- Index `y · size + x`, `y` running north, origin at the texture centre.
+- One byte per cell in the save (`GetMapData` calls `Write(bool)` in a loop).
+  That is the save format, not the wire format; §3.7 packs to bits or runs.
+- The save is the in-memory array written out in order, so `m_explored` read at
+  runtime has the same layout.
+
+**Still to confirm** against the build, as §4.3 asks for everything else:
 
 | Need                       | Expected source                                           |
 |----------------------------|-----------------------------------------------------------|
-| Own explored cells         | `Minimap.m_explored` (`bool[]`, index `cy · w + cx`)      |
-| Shared explored cells      | `Minimap.m_exploredOthers`                                |
-| `w`, `px`                  | `Minimap.m_textureSize`, `Minimap.m_pixelSize`            |
+| Own explored cells         | `Minimap.m_explored` — layout known, field name to confirm |
+| Shared explored cells      | `Minimap.m_exploredOthers` — assumed to share the layout   |
+| `w`, `px`                  | `m_textureSize`, `m_pixelSize`, on the instance            |
 | `r`                        | `Minimap.m_exploreRadius`                                 |
 | A reveal happened          | Postfix on `Minimap.Explore(Vector3, float)`              |
 | A whole map was merged in  | Postfix on `Minimap.AddSharedMapData`                     |
 
-The index layout is the one most likely to be wrong. If `m_explored` is not
-row-major with `cy` running north, the tile encoder transposes or flips. The
-wire format above does not change.
+`m_exploredOthers` sharing the layout is an assumption, not a measurement. It
+backs the same texture, so it would be surprising if it differed. A check is
+cheap: the map can apply the same built-pieces test to a character that has
+used a cartography table.
 
 #### Config and privacy
 
