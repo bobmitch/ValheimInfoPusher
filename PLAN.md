@@ -534,6 +534,11 @@ everyone in the room by installing a mod.
   fog. A streamer who turns it on exposes nothing of their friends'.
 - **`StreamerMode` does not affect fog.** It governs what arrives *in*, and fog
   only goes out. The streamer who asked for this will have it on.
+- **No Map worlds share fog too, deliberately.** The game keeps recording
+  exploration with the map off, and the mod does not check for the setting. A
+  nomap player has chosen not to see a map, but showing one to viewers is a
+  separate choice, made by turning on `ShareMyFog`. Do not add a nomap check
+  without asking for it.
 - **`ShareMyPosition = false` turns fog off too**, whatever `ShareMyFog` says.
   "Where I have been but not where I am" sounds coherent, but it is not: a live
   tile shows the edge of the fog moving, and that edge is where the player is,
